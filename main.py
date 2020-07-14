@@ -1,20 +1,14 @@
-# -*- coding: utf-8 -*-
-
-# Run this app with `python app.py` and
-# visit http://127.0.0.1:8050/ in your web browser.
-
 import dash
 import dash_core_components as dcc
 import dash_html_components as html
 import plotly.express as px
-from datetime import datetime, timedelta
 import pandas as pd
-import dash_table
-
+from preprocess_data import preprocess_data
 
 external_stylesheets = ['https://codepen.io/chriddyp/pen/bWLwgP.css']
 
 app = dash.Dash(__name__, external_stylesheets=external_stylesheets)
+server = app.server
 
 
 def generate_table(dataframe, max_rows=10):
@@ -30,20 +24,14 @@ def generate_table(dataframe, max_rows=10):
     ])
 
 
-# df = pd.DataFrame({"x": [1, 2, 3], "SF": [4, 1, 2], "Montreal": [2, 4, 5]})
-# fig = px.bar(df, x="x", y=["SF", "Montreal"], barmode="group")
-
-df = pd.read_pickle('table_df.pkl')
-date_yest = (datetime.now() - timedelta(1)).strftime('%m/%d/%y')
+df = preprocess_data()
 app.layout = html.Div(children=[
     html.H2(children='Whatcom County Covid-19 Tracker'),
-
-    # html.H4(children='US Agriculture Exports (2011)'),
 
     generate_table(df),
 
     html.Br(),
-    html.Div(children='Last update: {}'.format(date_yest)),
+    # html.Div(children='Last update: {}'.format(date_yest)),
     # dcc.Graph(
     #     id='example-graph',
     #     figure=fig
@@ -56,7 +44,7 @@ app.layout = html.Div(children=[
 # )
 
 if __name__ == '__main__':
-    app.run_server(debug=True)
+    app.run_server(debug=True, port=8080)
 
 #
 # external_stylesheets = ['https://codepen.io/chriddyp/pen/bWLwgP.css']

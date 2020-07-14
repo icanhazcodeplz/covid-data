@@ -1,9 +1,6 @@
 import pandas as pd
 import re
 
-state = 'Washington'
-county = 'Whatcom'
-
 
 def counts_by_county(df, state):
     df_state = df[df['Province_State'] == state].set_index('Admin2')
@@ -13,13 +10,6 @@ def counts_by_county(df, state):
     df_state = df_state.T
     df_state.index = pd.to_datetime(df_state.index)
     return df_state
-
-
-cases = pd.read_csv('time_series_covid19_confirmed_US.csv')
-deaths = pd.read_csv('time_series_covid19_deaths_US.csv')
-
-state_cases_diff = counts_by_county(cases, state).diff()
-state_deaths_diff = counts_by_county(deaths, state).diff()
 
 
 def data_for_table(name, ser):
@@ -34,13 +24,26 @@ def data_for_table(name, ser):
     return name, yest, week, two_week_ago, str(week_change) + '%'
 
 
-cases = data_for_table('Positive Tests', state_cases_diff[county])
-deaths = data_for_table('Deaths', state_deaths_diff[county])
-df = pd.DataFrame(data=[cases, deaths],
-                  columns=['', 'Yesterday', 'Past Week', 'Two Weeks Ago',
-                           'Weekly Change'])
+def preprocess_data(state='Washington', county='Whatcom'):
+    cases = pd.read_csv('https://raw.githubusercontent.com/CSSEGISandData/COVID-19/master/csse_covid_19_data/csse_covid_19_time_series/time_series_covid19_confirmed_US.csv')
+    deaths = pd.read_csv('https://raw.githubusercontent.com/CSSEGISandData/COVID-19/master/csse_covid_19_data/csse_covid_19_time_series/time_series_covid19_deaths_US.csv')
 
-df.to_pickle('table_df.pkl')
+    # cases = pd.read_csv('time_series_covid19_confirmed_US.csv')
+    # deaths = pd.read_csv('time_series_covid19_deaths_US.csv')
+
+    state_cases_diff = counts_by_county(cases, state).diff()
+    state_deaths_diff = counts_by_county(deaths, state).diff()
+
+    cases = data_for_table('Positive Tests', state_cases_diff[county])
+    deaths = data_for_table('Deaths', state_deaths_diff[county])
+    return pd.DataFrame(data=[cases, deaths],
+                      columns=['', 'Yesterday', 'Past Week', 'Two Weeks Ago',
+                               'Weekly Change'])
+
+
+df = preprocess_data()
+print()
+# df.to_pickle('table_df.pkl')
 
 
 ## Ideas
@@ -48,6 +51,7 @@ df.to_pickle('table_df.pkl')
 # https://www.digitalocean.com/community/pages/hub-for-good
 # https://covid19-dash.herokuapp.com/
 # https://covid19mtl.ca/en
+# https://covid19-dashboard-online.herokuapp.com/
 
 ## Cloud
 # https://console.cloud.google.com/freetrial/signup/tos?_ga=2.216095126.1215990170.1594321151-1114669994.1594321151&pli=1
