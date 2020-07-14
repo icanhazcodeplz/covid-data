@@ -3,15 +3,36 @@ import dash_core_components as dcc
 import dash_html_components as html
 import plotly.express as px
 import pandas as pd
+import cufflinks as cf
 from preprocess_data import preprocess_data
+
+STATE = 'Washington'
+COUNTY = 'Whatcom'
 
 external_stylesheets = ['https://codepen.io/chriddyp/pen/bWLwgP.css']
 
 app = dash.Dash(__name__, external_stylesheets=external_stylesheets)
 server = app.server
 
+df, table_df = preprocess_data(STATE, COUNTY)
+
+fig = df.iplot(asFigure=True, kind='bar', barmode='group',
+               title='New Cases and Deaths in {} County, {} '.format(COUNTY,
+                                                                     STATE))
+fig.update_layout(autosize=False, width=650, height=350,
+                  margin=dict(l=5, r=5, b=5, t=70, pad=1),
+                  paper_bgcolor="LightSteelBlue",
+                  xaxis=dict(tickformat='%b %d', tickmode='linear',
+                             tick0=df.index[0], dtick=14 * 86400000.0,
+                             showgrid=True, ticks="outside",
+                             tickson="boundaries", ticklen=3, tickangle=45)
+                  )
+# fig.show()
+print()
+
 
 def generate_table(dataframe, max_rows=10):
+    print('in gen_table')
     return html.Table([
         html.Thead(
             html.Tr([html.Th(col) for col in dataframe.columns])
@@ -24,18 +45,16 @@ def generate_table(dataframe, max_rows=10):
     ])
 
 
-df = preprocess_data()
 app.layout = html.Div(children=[
     html.H2(children='Whatcom County Covid-19 Tracker'),
-
-    generate_table(df),
+    generate_table(table_df),
 
     html.Br(),
     # html.Div(children='Last update: {}'.format(date_yest)),
-    # dcc.Graph(
-    #     id='example-graph',
-    #     figure=fig
-    # )
+    dcc.Graph(
+        id='example-graph',
+        figure=fig
+    )
 ])
 # app.layout = dash_table.DataTable(
 #     id='table',

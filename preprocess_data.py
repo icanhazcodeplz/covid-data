@@ -31,18 +31,34 @@ def preprocess_data(state='Washington', county='Whatcom'):
     # cases = pd.read_csv('time_series_covid19_confirmed_US.csv')
     # deaths = pd.read_csv('time_series_covid19_deaths_US.csv')
 
-    state_cases_diff = counts_by_county(cases, state).diff()
-    state_deaths_diff = counts_by_county(deaths, state).diff()
+    cases_diff = counts_by_county(cases, state).diff()[1:]
+    deaths_diff = counts_by_county(deaths, state).diff()[1:]
 
-    cases = data_for_table('Positive Tests', state_cases_diff[county])
-    deaths = data_for_table('Deaths', state_deaths_diff[county])
-    return pd.DataFrame(data=[cases, deaths],
-                      columns=['', 'Yesterday', 'Past Week', 'Two Weeks Ago',
-                               'Weekly Change'])
+    county_cases = cases_diff[county]
+    county_deaths = deaths_diff[county]
+
+    df = pd.concat([county_cases, county_deaths], axis=1)
+    df.columns = ['cases', 'deaths']
+
+    while (df['cases'][0] == 0.0) and (df['deaths'][0] == 0.0):
+        df = df[1:]
+
+    #TODO: Handle case where there are no positive values anywhere
+
+    df = df.clip(lower=0)
+    cases = data_for_table('Positive Tests', county_cases)
+
+    deaths = data_for_table('Deaths', county_deaths.clip(lower=0))
+
+    table_df = pd.DataFrame(data=[cases, deaths],
+                            columns=['', 'Yesterday', 'Past Week',
+                                     'Two Weeks Ago', 'Weekly Change'])
+
+    return df, table_df
 
 
-df = preprocess_data()
-print()
+# df = preprocess_data()
+# print()
 # df.to_pickle('table_df.pkl')
 
 
