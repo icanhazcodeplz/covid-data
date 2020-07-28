@@ -4,7 +4,24 @@ import dash_html_components as html
 import plotly.express as px
 import pandas as pd
 import cufflinks as cf
-from preprocess_data import county_list, all_county_data
+from preprocess_data import *
+
+#FIXME: Update file locations
+CASES_FILE = 'https://raw.githubusercontent.com/CSSEGISandData/COVID-19/master/csse_covid_19_data/csse_covid_19_time_series/time_series_covid19_confirmed_US.csv'
+DEATHS_FILE = 'https://raw.githubusercontent.com/CSSEGISandData/COVID-19/master/csse_covid_19_data/csse_covid_19_time_series/time_series_covid19_deaths_US.csv'
+
+CASES_FILE = 'time_series_covid19_confirmed_US.csv'
+DEATHS_FILE = 'time_series_covid19_deaths_US.csv'
+
+print('Loading {}'.format(CASES_FILE))
+cases_df = pd.read_csv(CASES_FILE)
+
+print('Loading {}'.format(DEATHS_FILE))
+deaths_df = pd.read_csv(DEATHS_FILE)
+
+county_keys = cases_df['Combined_Key'].unique()
+county_keys = [dict(label=k, value=k) for k in county_keys]
+
 
 external_stylesheets = ['https://codepen.io/chriddyp/pen/bWLwgP.css']
 
@@ -43,7 +60,7 @@ app.layout = html.Div(children=[
     html.H6('Search for a County'),
     dcc.Dropdown(
         id='county-dropdown',
-        options=county_list(),
+        options=county_keys,
         value=''
     ),
     html.Div(id='dd-output'),
@@ -53,10 +70,11 @@ app.layout = html.Div(children=[
 @app.callback(
     dash.dependencies.Output('dd-output', 'children'),
     [dash.dependencies.Input('county-dropdown', 'value')])
-def update_output(value):
-    if value:
-        county_df, summary_df = all_county_data(value)
-        fig = county_fig(county_df, value)
+def update_output(county_selection):
+    if county_selection:
+        county_df = county_data(cases_df, deaths_df, county_selection)
+        summary_df = county_summary(county_df)
+        fig = county_fig(county_df, county_selection)
         return html.Div(children=[generate_table(summary_df),
             dcc.Graph(figure=fig)])
 

@@ -1,19 +1,6 @@
 import pandas as pd
 import re
 
-#FIXME: Update file locations
-CASES_FILE = 'https://raw.githubusercontent.com/CSSEGISandData/COVID-19/master/csse_covid_19_data/csse_covid_19_time_series/time_series_covid19_confirmed_US.csv'
-DEATHS_FILE = 'https://raw.githubusercontent.com/CSSEGISandData/COVID-19/master/csse_covid_19_data/csse_covid_19_time_series/time_series_covid19_deaths_US.csv'
-
-# CASES_FILE = 'time_series_covid19_confirmed_US.csv'
-# DEATHS_FILE = 'time_series_covid19_deaths_US.csv'
-
-
-def county_list():
-    cases = pd.read_csv(CASES_FILE)
-    county_keys = cases['Combined_Key'].unique()
-    return [dict(label=k, value=k) for k in county_keys]
-
 
 def county_series(df, county_key):
     county_s = df[df['Combined_Key'] == county_key].set_index('Admin2')
@@ -25,13 +12,9 @@ def county_series(df, county_key):
     return county_s
 
 
-def county_data(county_key):
-    print('Reading CSV')
-    cases = pd.read_csv(CASES_FILE)
-    deaths = pd.read_csv(DEATHS_FILE)
-
-    county_cases = county_series(cases, county_key).diff()[1:]
-    county_deaths = county_series(deaths, county_key).diff()[1:]
+def county_data(cases_df, deaths_df, county_key):
+    county_cases = county_series(cases_df, county_key).diff()[1:]
+    county_deaths = county_series(deaths_df, county_key).diff()[1:]
 
     df = pd.concat([county_cases, county_deaths], axis=1)
     df.columns = ['cases', 'deaths']
@@ -67,13 +50,8 @@ def county_summary(county_df):
     return summary_df
 
 
-def all_county_data(county_key):
-    county_df = county_data(county_key)
-    summary_df = county_summary(county_df)
-    return county_df, summary_df
-
 if __name__ == '__main__':
-    county_data('Bibb, Alabama, US')
+    print()
 
 
 ## Ideas
@@ -82,6 +60,7 @@ if __name__ == '__main__':
 # https://covid19-dash.herokuapp.com/
 # https://covid19mtl.ca/en
 # https://covid19-dashboard-online.herokuapp.com/
-
+# https://experience.arcgis.com/experience/a6f23959a8b14bfa989e3cda29297ded
+# https://www.esri.com/en-us/covid-19/overview#image3
 ## Cloud
 # https://console.cloud.google.com/freetrial/signup/tos?_ga=2.216095126.1215990170.1594321151-1114669994.1594321151&pli=1
