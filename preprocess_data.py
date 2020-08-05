@@ -1,5 +1,18 @@
 import pandas as pd
 import re
+from __init__ import *
+
+
+def read_pkl(name):
+    file = '{}/{}.pkl'.format(DATA_DIR, name)
+    print('reading "{}"'.format(file)) if LOG_LEVEL > 1 else None
+    return pd.read_pickle('{}/{}.pkl'.format(DATA_DIR, name))
+
+
+def save_pkl(thing, name):
+    file = '{}/{}.pkl'.format(DATA_DIR, name)
+    pd.to_pickle(thing, file)
+    print('saved "{}"'.format(file)) if LOG_LEVEL > 0 else None
 
 
 def preprocess_raw_df(df):
@@ -11,6 +24,41 @@ def preprocess_raw_df(df):
     # Convert fips to string and front fill zeros to get to 5 characters
     df['FIPS'] = df['FIPS'].apply(lambda n: str.zfill(str(int(n)), 5))
     return df
+
+
+def get_and_save_data():
+    print('Loading "{}"'.format(CASES_FILE)) if LOG_LEVEL > 0 else None
+    cases_df = pd.read_csv(CASES_FILE)
+    cases_df = preprocess_raw_df(cases_df)
+    print('Loading "{}"'.format(DEATHS_FILE)) if LOG_LEVEL > 0 else None
+    deaths_df = pd.read_csv(DEATHS_FILE)
+    deaths_df = preprocess_raw_df(deaths_df)
+
+    new_cases_df = new_cases(cases_df)
+
+    pop_df = deaths_df[['FIPS', 'Population', 'Combined_Key']].set_index('FIPS')
+    fips_pop_dict = pop_df['Population'].to_dict()
+    fips_county_dict = pop_df['Combined_Key'].to_dict()
+
+    def per_100k(s):
+        return s / fips_pop_dict[s.name] * 100000
+
+    new_cases_rate_df = new_cases_df.apply(per_100k)
+
+    case_ave_df = new_cases_df.rolling(7, ).mean().dropna()
+    case_ave_rate_df = case_ave_df.apply(per_100k)
+
+    map_df = pop_df[['Combined_Key']]
+    map_df['week_ave'] = case_ave_df.iloc[-1]
+    map_df['ave_rate'] = case_ave_rate_df.iloc[-1]
+    map_df = map_df.reset_index()
+
+    save_pkl(map_df, 'map_df')
+    save_pkl(new_cases_df, 'new_cases_df')
+    save_pkl(new_cases_rate_df, 'new_cases_rate_df')
+    save_pkl(fips_county_dict, 'fips_county_dict')
+    save_pkl(case_ave_df, 'case_ave_df')
+    save_pkl(case_ave_rate_df, 'case_ave_rate_df')
 
 
 def county_series(df, county_key):
@@ -46,7 +94,7 @@ def clean_county_s(county_s):
         return None
 
 
-def county_summary(county_s):
+def county_summary(county_s, county_rate_s):
 
     def data_for_table(name, ser):
         yest = ser.iloc[-1]
@@ -66,8 +114,9 @@ def county_summary(county_s):
         return name, yest, week, two_week_ago, week_change
 
     cases = data_for_table('Positive Tests', county_s)
+    case_rate = data_for_table('Per 100k', county_rate_s)
 
-    summary_df = pd.DataFrame(data=[cases],
+    summary_df = pd.DataFrame(data=[cases, case_rate],
                               columns=['', 'Yesterday', 'Past Week',
                                        'Two Weeks Ago', 'Weekly Change'])
     return summary_df
