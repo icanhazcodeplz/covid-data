@@ -24,15 +24,24 @@ def county_series(df, county_key):
     return county_s['cases']
 
 
-def county_data(cases_df, county_key):
-    county_cases = county_series(cases_df, county_key).diff()[1:]
+def new_cases(cases_df):
+    df = cases_df.set_index('FIPS')
+    date_cols_bool = [bool(re.match('\d*/\d*/\d\d', c)) for c in
+                      df.columns]
+    df = df.iloc[:, date_cols_bool].T
+    df = df.diff()[1:]
+    df = df.clip(lower=0) #FIXME: Remove positive tests from previous day instead?
+    df.index = pd.to_datetime(df.index)
+    return df
 
-    if county_cases.sum() > 0:
-        while county_cases[0] == 0.0:
-            county_cases = county_cases[1:]
+
+def clean_county_s(county_s):
+    if county_s.sum() > 0:
+        while county_s[0] == 0.0:
+            county_s = county_s[1:]
         #FIXME: Remove positive tests from previous day instead?
-        county_cases = county_cases.clip(lower=0)
-        return county_cases
+        county_s = county_s.clip(lower=0)
+        return county_s
     else:
         return None
 
