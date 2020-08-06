@@ -6,4 +6,5 @@ dash-html-components==1.0.3
 dash-renderer==1.5.1
 dash-table==4.8.1
 cufflinks==0.17.3
+apscheduler==3.6.3
 gunicorn

@@ -1,5 +1,7 @@
 import pandas as pd
+from datetime import datetime
 import re
+import os
 from __init__ import *
 
 
@@ -15,6 +17,11 @@ def save_pkl(thing, name):
     print('saved "{}"'.format(file)) if LOG_LEVEL > 0 else None
 
 
+def last_update():
+    t = os.path.getctime('{}/map_df.pkl'.format(DATA_DIR))
+    return datetime.fromtimestamp(t).strftime('%m/%d/%Y')
+
+
 def preprocess_raw_df(df):
     df = df.dropna()
     df = df[~(df['Admin2'] == 'Unassigned')]
@@ -28,37 +35,33 @@ def preprocess_raw_df(df):
 
 def get_and_save_data():
     print('Loading "{}"'.format(CASES_FILE)) if LOG_LEVEL > 0 else None
-    cases_df = pd.read_csv(CASES_FILE)
-    cases_df = preprocess_raw_df(cases_df)
+    tot_cases_df = pd.read_csv(CASES_FILE)
+    tot_cases_df = preprocess_raw_df(tot_cases_df)
     print('Loading "{}"'.format(DEATHS_FILE)) if LOG_LEVEL > 0 else None
-    deaths_df = pd.read_csv(DEATHS_FILE)
-    deaths_df = preprocess_raw_df(deaths_df)
+    tot_deaths_df = pd.read_csv(DEATHS_FILE)
+    tot_deaths_df = preprocess_raw_df(tot_deaths_df)
 
-    new_cases_df = new_cases(cases_df)
+    cases_df = new_cases(tot_cases_df)
 
-    pop_df = deaths_df[['FIPS', 'Population', 'Combined_Key']].set_index('FIPS')
+    pop_df = tot_deaths_df[['FIPS', 'Population', 'Combined_Key']].set_index('FIPS')
     fips_pop_dict = pop_df['Population'].to_dict()
     fips_county_dict = pop_df['Combined_Key'].to_dict()
 
     def per_100k(s):
         return s / fips_pop_dict[s.name] * 100000
 
-    new_cases_rate_df = new_cases_df.apply(per_100k)
-
-    case_ave_df = new_cases_df.rolling(7, ).mean().dropna()
-    case_ave_rate_df = case_ave_df.apply(per_100k)
+    cases_ave_df = cases_df.rolling(7, ).mean().dropna()
+    cases_ave_rate_df = cases_ave_df.apply(per_100k)
 
     map_df = pop_df[['Combined_Key']]
-    map_df['week_ave'] = case_ave_df.iloc[-1]
-    map_df['ave_rate'] = case_ave_rate_df.iloc[-1]
+    map_df['week_ave'] = cases_ave_df.iloc[-1]
+    map_df['ave_rate'] = cases_ave_rate_df.iloc[-1]
     map_df = map_df.reset_index()
 
     save_pkl(map_df, 'map_df')
-    save_pkl(new_cases_df, 'new_cases_df')
-    save_pkl(new_cases_rate_df, 'new_cases_rate_df')
+    save_pkl(cases_df, 'cases_df')
     save_pkl(fips_county_dict, 'fips_county_dict')
-    save_pkl(case_ave_df, 'case_ave_df')
-    save_pkl(case_ave_rate_df, 'case_ave_rate_df')
+    save_pkl(fips_pop_dict, 'fips_pop_dict')
 
 
 def county_series(df, county_key):
@@ -94,35 +97,58 @@ def clean_county_s(county_s):
         return None
 
 
+def county_data(cases, pop):
+    if cases.sum() == 0:
+        return None
+
+    df = cases.to_frame('cases')
+    df['cases_rate'] = df['cases'] / pop * 100000
+
+    df['cases_ave'] = df['cases'].rolling(7, ).mean()
+    df['cases_ave_rate'] = df['cases_ave'] / pop * 100000
+    return df
+
+
 def county_summary(county_s, county_rate_s):
 
-    def data_for_table(name, ser):
-        yest = ser.iloc[-1]
-        week = ser.tail(7).sum()
-        two_week_ago = ser.tail(14).head(7).sum()
-        if two_week_ago > 0:
-            week_change = (week / two_week_ago - 1) * 100
-        elif (two_week_ago == 0) and (week == 0):
-            week_change = 0
-        else:
-            week_change = 100
-        week_change = int(round(week_change))
-        if week_change >= 0:
-            week_change = '+{}%'.format(week_change)
-        else:
-            week_change = '{}%'.format(week_change)
-        return name, yest, week, two_week_ago, week_change
+    yest = county_s.iloc[-1]
+    week = county_s.tail(7).sum()
+    two_week_ago = county_s.tail(14).head(7).sum()
+    if two_week_ago > 0:
+        week_change = (week / two_week_ago - 1) * 100
+    elif (two_week_ago == 0) and (week == 0):
+        week_change = 0
+    else:
+        week_change = 100
 
-    cases = data_for_table('Positive Tests', county_s)
-    case_rate = data_for_table('Per 100k', county_rate_s)
 
-    summary_df = pd.DataFrame(data=[cases, case_rate],
-                              columns=['', 'Yesterday', 'Past Week',
-                                       'Two Weeks Ago', 'Weekly Change'])
-    return summary_df
+    # week_change = int(round(week_change))
+    # if week_change >= 0:
+    #     week_change = '+{}%'.format(week_change)
+    # else:
+    #     week_change = '{}%'.format(week_change)
+
+    if week < 10:
+        trend = 'N/A'
+    elif week_change < -20:
+        trend = 'Falling Quickly'
+    elif week_change < -2:
+        trend = 'Falling Slowly'
+    elif week_change > 20:
+        trend = 'Rising Quickly'
+    elif week_change > 2:
+        trend = 'Rising Slowly'
+    else:
+        trend = 'No Change'
+
+    # summary_df = pd.DataFrame(data=[cases, case_rate],
+    #                           columns=['', 'Yesterday', 'Past Week'])
+    # return summary_df, trend
 
 
 if __name__ == '__main__':
+    get_and_save_data()
+    # last_update()
     print()
 
 
