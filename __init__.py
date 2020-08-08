@@ -9,3 +9,4 @@ BUCKET = 'covid-283120.appspot.com'
 USE_LOCAL_DIR = False
 DATA_DIR = 'processed_data'
 LOG_LEVEL = 1
+ACCEPTABLE_STALE_HOURS = 1

@@ -12,7 +12,7 @@ from apscheduler.schedulers.background import BackgroundScheduler
 from __init__ import *
 from preprocess_data import *
 
-get_and_save_data()
+# get_and_save_data()
 
 sched = BackgroundScheduler()
 
@@ -28,13 +28,16 @@ external_stylesheets = ['https://codepen.io/chriddyp/pen/bWLwgP.css']
 app = dash.Dash(__name__, external_stylesheets=external_stylesheets)
 server = app.server
 
+#### GLOBAL VARS ##############################################################
 with open('geojson-counties-fips.json') as f:
     counties = json.load(f)
 
+fd = FreshData()
+
 
 def covid_map():
-    map_df = DataHandler().load_pkl_file('map_df')
-    f = px.choropleth_mapbox(map_df, geojson=counties, locations='FIPS', color='ave_rate',
+    fd.refresh_if_needed()
+    f = px.choropleth_mapbox(fd.map_df, geojson=counties, locations='FIPS', color='ave_rate',
                                    color_continuous_scale='Reds', #"YlOrRd",
                                    range_color=(0, 40),
                                    mapbox_style="carto-positron",
@@ -102,27 +105,21 @@ app.layout = html.Div(children=[
     #     options=county_keys,
     #     value=''
     # ),
-    html.Div(id='click-data'),
+    html.Div(id='county-display'),
     ])
 
 
-# fips_county_dict = read_pkl('fips_county_dict')
-# fips_pop_dict = read_pkl('fips_pop_dict')
-pop_df = DataHandler().load_pkl_file('pop_df')
-fips_pop_dict = pop_df['Population'].to_dict()
-fips_county_dict = pop_df['Combined_Key'].to_dict()
-
 @app.callback(
-    Output('click-data', 'children'),
+    Output('county-display', 'children'),
     [Input('cases-map', 'clickData')])
 def county_display(clickData):
     if clickData:
+        refreshed = fd.refresh_if_needed()
         fips = clickData['points'][0]['location']
-        county_name = fips_county_dict[fips]
-        county_pop = fips_pop_dict[fips]
+        county_name = fd.fips_county_dict[fips]
+        county_pop = fd.fips_pop_dict[fips]
 
-        cases_df = DataHandler().load_pkl_file('cases_df')
-        county_df = county_data(cases_df[fips], county_pop)
+        county_df = county_data(fd.cases_df[fips], county_pop)
         if county_df is None:
             return html.H4('No recorded positive cases in {}'.format(county_name))
 
@@ -132,7 +129,9 @@ def county_display(clickData):
         return html.Div(children=[
             html.H4('Data for {}'.format(county_name)),
             # generate_table(summary_df),
-            dcc.Graph(figure=fig)])
+            dcc.Graph(figure=fig),
+            dcc.Markdown('Refreshed {}. Last refresh {}'.format(refreshed, fd.last_refresh_time))
+        ])
 
     return ''
 

@@ -1,5 +1,5 @@
 import pandas as pd
-from datetime import datetime
+from datetime import datetime, timedelta
 import re
 import os
 from __init__ import *
@@ -211,10 +211,35 @@ def county_summary(county_s, county_rate_s):
     # return summary_df, trend
 
 
+class FreshData:
+
+    def __init__(self):
+        self.map_df = DataHandler().load_pkl_file('map_df')
+        self.cases_df = DataHandler().load_pkl_file('cases_df')
+        self.pop_df = DataHandler().load_pkl_file('pop_df')
+        self.fips_pop_dict = self.pop_df['Population'].to_dict()
+        self.fips_county_dict = self.pop_df['Combined_Key'].to_dict()
+
+        self.last_refresh_time = datetime.now()
+
+    def refresh_if_needed(self):
+        stale_secs = (datetime.now() - self.last_refresh_time).total_seconds()
+        stale_hours = stale_secs / 3600
+        if stale_hours > ACCEPTABLE_STALE_HOURS:
+            print('Refreshing data at {}'.format(datetime.now()))
+            self.__init__()
+            return True
+        else:
+            return False
+
+
+
 if __name__ == '__main__':
+    fd = FreshData()
+    fd.load_data()
+    fd.refresh_if_needed((1 / 60))
     # get_and_save_data(upload_pkl_to_gcloud=True)
 
-    map_df = download_pkl_blob_as_df('map_df')
     # cases_df = download_csv_blob_as_df('cases_df')
     # cases_df = read_pkl('cases_df')
     # upload_df_as_pkl_blob(cases_df, 'cases_df')
