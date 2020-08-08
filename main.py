@@ -3,9 +3,11 @@ import dash_core_components as dcc
 import dash_html_components as html
 from dash.dependencies import Input, Output
 import plotly.express as px
+import numpy as np
 import pandas as pd
 import cufflinks as cf
 from urllib.request import urlopen
+from datetime import timedelta
 import json
 from apscheduler.schedulers.background import BackgroundScheduler
 
@@ -55,17 +57,33 @@ def covid_map():
 def county_fig(df, county_name):
     #TODO: Update Colors
     #TODO: Get x-ticks backwards from end
+
+    df = df.round(1)
+    ### find first tick spot
+    total_days = len(df)
+    days_back_to_start = int(total_days / 14) * 14 + 2
+    # Hacky fix to add extra day at end so that the tick-mark will show
+    new_i = df.index[-1] + timedelta(days=1)
+    df.loc[new_i] = [np.nan] * len(df.columns)
+
+
     f = px.line(df['cases_ave'], title='New Cases in {}'.format(county_name))
-    f.update_traces(name='7 Day Average')
+    # f.update_xaxes()
+    f.update_traces(name='7 Day Average', hovertemplate=None)
     f.add_bar(y=df['cases'], x=df.index, name='New Cases')
     f.update_layout(autosize=False, width=650, height=350,
-                      margin=dict(l=5, r=5, b=5, t=70, pad=1),
-                      paper_bgcolor="LightSteelBlue",
-                      xaxis=dict(tickformat='%b %d', tickmode='linear',
-                                 tick0=df.index[0], dtick=14 * 86400000.0,
-                                 showgrid=True, ticks="outside",
-                                 tickson="boundaries", ticklen=3, tickangle=45)
+                    margin=dict(l=5, r=5, b=5, t=70, pad=1),
+                    paper_bgcolor="LightSteelBlue",
+                    hovermode='x unified',
+                    yaxis=dict(title=None),
+                    xaxis=dict(title=None,tickformat='%b %d', tickmode='linear',
+                                tick0=df.index[-days_back_to_start],
+                                dtick=14 * 86400000.0,
+                                showgrid=True, ticks="outside",
+                                tickson="boundaries", ticklen=3, tickangle=45)
+
                       )
+    # f.show()
     return f
 
 
@@ -130,7 +148,10 @@ def county_display(clickData):
             html.H4('Data for {}'.format(county_name)),
             # generate_table(summary_df),
             dcc.Graph(figure=fig),
-            dcc.Markdown('Refreshed {}. Last refresh {}'.format(refreshed, fd.last_refresh_time))
+            dcc.Markdown(''' Debug Info
+            Refreshed {}. Last refresh {}
+            Fips = {}. Pop = {}
+            '''.format(refreshed, fd.last_refresh_time, fips, county_pop))
         ])
 
     return ''
@@ -142,5 +163,11 @@ def county_display(clickData):
 
 
 if __name__ == '__main__':
+    fips = '24019'
+    county_name = fd.fips_county_dict[fips]
+    county_pop = fd.fips_pop_dict[fips]
+    county_df = county_data(fd.cases_df[fips], county_pop)
+    fig = county_fig(county_df, county_name)
+
     app.run_server(debug=True, port=8080)
 

@@ -171,7 +171,7 @@ def county_data(cases, pop):
 
     df['cases_ave'] = df['cases'].rolling(7, ).mean()
     df['cases_ave_rate'] = df['cases_ave'] / pop * 100000
-    return df
+    return df.dropna()
 
 
 def county_summary(county_s, county_rate_s):
