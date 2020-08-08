@@ -4,17 +4,84 @@ import re
 import os
 from __init__ import *
 
+from google.cloud import storage
+import pickle
+from io import BytesIO
+from io import StringIO
+import sys
 
-def read_pkl(name):
-    file = '{}/{}.pkl'.format(DATA_DIR, name)
-    print('reading "{}"'.format(file)) if LOG_LEVEL > 1 else None
-    return pd.read_pickle('{}/{}.pkl'.format(DATA_DIR, name))
 
+class DataHandler:
 
-def save_pkl(thing, name):
-    file = '{}/{}.pkl'.format(DATA_DIR, name)
-    pd.to_pickle(thing, file)
-    print('saved "{}"'.format(file)) if LOG_LEVEL > 0 else None
+    def _upload_string_blob(self, string, destination_blob_name):
+        """Uploads a string to the bucket."""
+        storage_client = storage.Client()
+        bucket = storage_client.bucket(BUCKET)
+        blob = bucket.blob(destination_blob_name)
+
+        blob.upload_from_string(string)
+        print("String uploaded to {}.".format(destination_blob_name))
+
+    def _upload_file_blob(self, file, destination_blob_name):
+        """Uploads a string to the bucket."""
+        storage_client = storage.Client()
+        bucket = storage_client.bucket(BUCKET)
+        blob = bucket.blob(destination_blob_name)
+
+        blob.upload_from_file(file)
+        print("String uploaded to {}.".format(destination_blob_name))
+
+    def _upload_df_as_csv_blob(self, df, name_prefix):
+        csv = StringIO()
+        df.to_csv(csv)
+        self._upload_string_blob(csv.getvalue(), '{}.csv'.format(name_prefix))
+
+    def _download_csv_blob_as_df(self, name_prefix):
+        """Downloads a blob from the bucket."""
+        storage_client = storage.Client()
+
+        bucket = storage_client.bucket(BUCKET)
+        blob = bucket.blob('{}.csv'.format(name_prefix))
+        txt = blob.download_as_string()
+        return pd.read_csv(BytesIO(txt), index_col=0)
+
+    def _upload_df_as_pkl_blob(self, df, name_prefix):
+        self._upload_file_blob(BytesIO(pickle.dumps(df)), '{}.pkl'.format(name_prefix))
+
+    def _download_pkl_blob_as_df(self, name_prefix):
+        """Downloads a blob from the bucket."""
+        storage_client = storage.Client()
+
+        bucket = storage_client.bucket(BUCKET)
+        blob = bucket.blob('{}.pkl'.format(name_prefix))
+        txt = blob.download_as_string()
+        return pd.read_pickle(BytesIO(txt))
+
+    def _local_pkl_path(self, name):
+        return '{}/{}.pkl'.format(DATA_DIR, name)
+
+    def _read_local_pkl(self, name):
+        file = self._local_pkl_path(name)
+        print('reading "{}"'.format(file)) if LOG_LEVEL > 1 else None
+        return pd.read_pickle(file)
+
+    def _save_local_pkl(self, thing, name):
+        file = self._local_pkl_path(name)
+        pd.to_pickle(thing, file)
+        print('saved "{}"'.format(file)) if LOG_LEVEL > 0 else None
+
+    def load_pkl_file(self, file_prefix):
+        #TODO: Make this class or static method?
+        if USE_LOCAL_DIR:
+            return self._read_local_pkl(file_prefix)
+        else:
+            return self._download_pkl_blob_as_df(file_prefix)
+
+    def save_pkl_file(self, obj, file_prefix):
+        if USE_LOCAL_DIR:
+            return self._save_local_pkl(obj, file_prefix)
+        else:
+            return self._upload_df_as_pkl_blob(obj, file_prefix)
 
 
 def last_update():
@@ -45,7 +112,6 @@ def get_and_save_data():
 
     pop_df = tot_deaths_df[['FIPS', 'Population', 'Combined_Key']].set_index('FIPS')
     fips_pop_dict = pop_df['Population'].to_dict()
-    fips_county_dict = pop_df['Combined_Key'].to_dict()
 
     def per_100k(s):
         return s / fips_pop_dict[s.name] * 100000
@@ -58,10 +124,9 @@ def get_and_save_data():
     map_df['ave_rate'] = cases_ave_rate_df.iloc[-1]
     map_df = map_df.reset_index()
 
-    save_pkl(map_df, 'map_df')
-    save_pkl(cases_df, 'cases_df')
-    save_pkl(fips_county_dict, 'fips_county_dict')
-    save_pkl(fips_pop_dict, 'fips_pop_dict')
+    DataHandler().save_pkl_file(map_df, 'map_df')
+    DataHandler().save_pkl_file(cases_df, 'cases_df')
+    DataHandler().save_pkl_file(pop_df, 'pop_df')
 
 
 def county_series(df, county_key):
@@ -147,7 +212,18 @@ def county_summary(county_s, county_rate_s):
 
 
 if __name__ == '__main__':
-    get_and_save_data()
+    # get_and_save_data(upload_pkl_to_gcloud=True)
+
+    map_df = download_pkl_blob_as_df('map_df')
+    # cases_df = download_csv_blob_as_df('cases_df')
+    # cases_df = read_pkl('cases_df')
+    # upload_df_as_pkl_blob(cases_df, 'cases_df')
+    # df = download_csv_blob_as_df('cases_df.csv')
+    print('done')
+    # df2 = read_pkl('cases_df')
+    # buff = BytesIO()
+
+    # get_and_save_data()
     # last_update()
     print()
 

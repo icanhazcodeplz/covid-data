@@ -28,13 +28,12 @@ external_stylesheets = ['https://codepen.io/chriddyp/pen/bWLwgP.css']
 app = dash.Dash(__name__, external_stylesheets=external_stylesheets)
 server = app.server
 
-
 with open('geojson-counties-fips.json') as f:
     counties = json.load(f)
 
 
 def covid_map():
-    map_df = read_pkl('map_df')
+    map_df = DataHandler().load_pkl_file('map_df')
     f = px.choropleth_mapbox(map_df, geojson=counties, locations='FIPS', color='ave_rate',
                                    color_continuous_scale='Reds', #"YlOrRd",
                                    range_color=(0, 40),
@@ -52,6 +51,7 @@ def covid_map():
 
 def county_fig(df, county_name):
     #TODO: Update Colors
+    #TODO: Get x-ticks backwards from end
     f = px.line(df['cases_ave'], title='New Cases in {}'.format(county_name))
     f.update_traces(name='7 Day Average')
     f.add_bar(y=df['cases'], x=df.index, name='New Cases')
@@ -83,9 +83,8 @@ app.layout = html.Div(children=[
     dcc.Markdown(
         '''
         # Covid-19 Hot Spots
-        Last update {}
         ##### Click on a County for more information
-        '''.format(last_update())),
+        '''),
     dcc.Graph(figure=covid_map(), id='cases-map'),
     # html.Div(className='row', children=[
     #     html.Div([
@@ -107,8 +106,11 @@ app.layout = html.Div(children=[
     ])
 
 
-fips_county_dict = read_pkl('fips_county_dict')
-fips_pop_dict = read_pkl('fips_pop_dict')
+# fips_county_dict = read_pkl('fips_county_dict')
+# fips_pop_dict = read_pkl('fips_pop_dict')
+pop_df = DataHandler().load_pkl_file('pop_df')
+fips_pop_dict = pop_df['Population'].to_dict()
+fips_county_dict = pop_df['Combined_Key'].to_dict()
 
 @app.callback(
     Output('click-data', 'children'),
@@ -119,7 +121,7 @@ def county_display(clickData):
         county_name = fips_county_dict[fips]
         county_pop = fips_pop_dict[fips]
 
-        cases_df = read_pkl('cases_df')
+        cases_df = DataHandler().load_pkl_file('cases_df')
         county_df = county_data(cases_df[fips], county_pop)
         if county_df is None:
             return html.H4('No recorded positive cases in {}'.format(county_name))
