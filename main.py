@@ -6,24 +6,10 @@ import plotly.express as px
 import numpy as np
 import pandas as pd
 import cufflinks as cf
-from urllib.request import urlopen
-from datetime import timedelta
 import json
-from apscheduler.schedulers.background import BackgroundScheduler
 
 from __init__ import *
 from preprocess_data import *
-
-# get_and_save_data()
-
-sched = BackgroundScheduler()
-
-@sched.scheduled_job('cron', day_of_week='mon-sun', hour=0)
-def scheduled_job():
-    print('Getting data, processing, and saving to pickles')
-    get_and_save_data()
-
-sched.start()
 
 
 external_stylesheets = ['https://codepen.io/chriddyp/pen/bWLwgP.css']
@@ -31,10 +17,12 @@ app = dash.Dash(__name__, external_stylesheets=external_stylesheets)
 server = app.server
 
 #### GLOBAL VARS ##############################################################
+fd = FreshData()
+county_keys_old = [dict(label=k, value=k) for k in fd.pop_df['Combined_Key'].unique()]
+county_keys = [dict(value=k, label=v) for k, v in fd.fips_county_dict.items()]
 with open('geojson-counties-fips.json') as f:
     counties = json.load(f)
-
-fd = FreshData()
+#### END GLOBAL VARS ##########################################################
 
 
 def covid_map():
@@ -66,7 +54,6 @@ def county_fig(df, county_name):
     new_i = df.index[-1] + timedelta(days=1)
     df.loc[new_i] = [np.nan] * len(df.columns)
 
-
     f = px.line(df['cases_ave'], title='New Cases in {}'.format(county_name))
     # f.update_xaxes()
     f.update_traces(name='7 Day Average', hovertemplate=None)
@@ -97,77 +84,66 @@ def generate_table(dataframe, max_rows=10):
         ])
     ])
 
-# county_keys = [dict(label=k, value=k) for k in pop_df['Combined_Key'].unique()]
-
 
 app.layout = html.Div(children=[
-    dcc.Markdown(
-        '''
-        # Covid-19 Hot Spots
-        ##### Click on a County for more information
-        '''),
+    html.H1('Covid-19 Hot Spots'),
     dcc.Graph(figure=covid_map(), id='cases-map'),
-    # html.Div(className='row', children=[
-    #     html.Div([
-    #         dcc.Markdown("""
-    #                 **Click Data**
-    #
-    #                 Click on points in the graph.
-    #             """),
-    #         html.Pre(id='click-data', style=styles['pre']),
-    #         ], className='three columns'),
-    #     ]),
-    # html.H6('Search for a County'),
-    # dcc.Dropdown(
-    #     id='county-dropdown',
-    #     options=county_keys,
-    #     value=''
-    # ),
+    html.Div([
+        html.Div([
+            html.Div([
+                html.H5('For more data, click on a county or select from the dropdown'),
+            ], className="six columns"),
+
+            html.Div([
+                dcc.Dropdown(
+                id='county-dropdown',
+                options=county_keys,
+                placeholder='Select a county'),
+            ], className="six columns"),#, style=dict(width='50%')),
+        ], className="row")
+    ], className="row"),
     html.Div(id='county-display'),
+    ])
+
+def county_display(fips):
+    refreshed = fd.refresh_if_needed()
+    county_name = fd.fips_county_dict[fips]
+    county_pop = fd.fips_pop_dict[fips]
+    county_df = county_data(fd.cases_df[fips], county_pop)
+    if county_df is None:
+        return html.H4('No recorded positive cases in {}'.format(county_name))
+    # summary_df, trend = county_summary(county_s, county_rate_s, )
+    fig = county_fig(county_df, county_name)
+    return html.Div(children=[
+        # html.H4('Data for {}'.format(county_name)),
+        # generate_table(summary_df),
+        dcc.Graph(figure=fig),
+        html.H1(''),
+        html.H1(''),
+        dcc.Markdown('''
+            Debug Info
+            Refreshed {}. Last refresh {}
+            Fips = {}. Pop = {}
+            '''.format(refreshed, fd.last_refresh_time, fips, county_pop))
     ])
 
 
 @app.callback(
     Output('county-display', 'children'),
-    [Input('cases-map', 'clickData')])
-def county_display(clickData):
-    if clickData:
-        refreshed = fd.refresh_if_needed()
+    [Input('cases-map', 'clickData'),
+     Input('county-dropdown', 'value')])
+def map_click_or_county_selection(clickData, value):
+    ctx = dash.callback_context
+    if not ctx.triggered:
+        return ''
+    trigger = ctx.triggered[0]['prop_id'].split('.')[0]
+    if trigger == 'cases-map':
         fips = clickData['points'][0]['location']
-        county_name = fd.fips_county_dict[fips]
-        county_pop = fd.fips_pop_dict[fips]
-
-        county_df = county_data(fd.cases_df[fips], county_pop)
-        if county_df is None:
-            return html.H4('No recorded positive cases in {}'.format(county_name))
-
-        # summary_df, trend = county_summary(county_s, county_rate_s, )
-
-        fig = county_fig(county_df, county_name)
-        return html.Div(children=[
-            html.H4('Data for {}'.format(county_name)),
-            # generate_table(summary_df),
-            dcc.Graph(figure=fig),
-            dcc.Markdown(''' Debug Info
-            Refreshed {}. Last refresh {}
-            Fips = {}. Pop = {}
-            '''.format(refreshed, fd.last_refresh_time, fips, county_pop))
-        ])
-
-    return ''
-
-
-# @app.callback(
-#     Output('dd-output', 'children'),
-#     [Input('county-dropdown', 'value')])
+    elif trigger == 'county-dropdown':
+        fips = value
+    return county_display(fips)
 
 
 if __name__ == '__main__':
-    fips = '24019'
-    county_name = fd.fips_county_dict[fips]
-    county_pop = fd.fips_pop_dict[fips]
-    county_df = county_data(fd.cases_df[fips], county_pop)
-    fig = county_fig(county_df, county_name)
-
     app.run_server(debug=True, port=8080)
 
