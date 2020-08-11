@@ -15,6 +15,7 @@ from preprocess_data import *
 external_stylesheets = ['https://codepen.io/chriddyp/pen/bWLwgP.css']
 app = dash.Dash(__name__, external_stylesheets=external_stylesheets)
 server = app.server
+app.title = 'COVID-19 Dashboard'
 
 #### GLOBAL VARS ##############################################################
 fd = FreshData()
@@ -86,7 +87,15 @@ def generate_table(dataframe, max_rows=10):
 
 
 app.layout = html.Div(children=[
-    html.H1('Covid-19 Hot Spots'),
+    dcc.Markdown('''
+    # COVID-19 Hot Spots
+    Welcome! This dashboard is, to say the least, a work in progress.
+    It is built using [Plotly Dash](https://plotly.com/dash/) with data from 
+    [Johns Hopkins University](https://github.com/CSSEGISandData/COVID-19). 
+    The source code is available on 
+    [Github](https://github.com/icanhazcodeplz/covid-data). The inspiration for 
+    the map is from the [NYTimes](https://www.nytimes.com/interactive/2020/us/coronavirus-us-cases.html).
+    '''),
     dcc.Graph(figure=covid_map(), id='cases-map'),
     html.Div([
         html.Div([
@@ -104,6 +113,7 @@ app.layout = html.Div(children=[
     ], className="row"),
     html.Div(id='county-display'),
     ])
+
 
 def county_display(fips):
     refreshed = fd.refresh_if_needed()
