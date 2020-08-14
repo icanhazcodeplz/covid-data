@@ -2,14 +2,28 @@ import pandas as pd
 import re
 from google.cloud import storage
 import pickle
-from io import BytesIO
+from io import BytesIO, StringIO
+
 
 CASES_FILE = 'https://raw.githubusercontent.com/CSSEGISandData/COVID-19/master/csse_covid_19_data/csse_covid_19_time_series/time_series_covid19_confirmed_US.csv'
 DEATHS_FILE = 'https://raw.githubusercontent.com/CSSEGISandData/COVID-19/master/csse_covid_19_data/csse_covid_19_time_series/time_series_covid19_deaths_US.csv'
 BUCKET = 'covid-283120.appspot.com'
+USE_LOCAL_DIR = False
+DATA_DIR = 'processed_data'
+
 
 
 class DataHandler:
+
+    def _upload_string_blob(self, string, destination_blob_name):
+        """Uploads a string to the bucket."""
+        storage_client = storage.Client()
+        bucket = storage_client.bucket(BUCKET)
+        blob = bucket.blob(destination_blob_name)
+
+        blob.upload_from_string(string)
+        print("String uploaded to {}.".format(destination_blob_name))
+
     def _upload_file_blob(self, file, destination_blob_name):
         """Uploads a string to the bucket."""
         storage_client = storage.Client()
@@ -17,13 +31,59 @@ class DataHandler:
         blob = bucket.blob(destination_blob_name)
 
         blob.upload_from_file(file)
-        print("Blob uploaded to {}.".format(destination_blob_name))
+        print("String uploaded to {}.".format(destination_blob_name))
+
+    def _upload_df_as_csv_blob(self, df, name_prefix):
+        csv = StringIO()
+        df.to_csv(csv)
+        self._upload_string_blob(csv.getvalue(), '{}.csv'.format(name_prefix))
+
+    def _download_csv_blob_as_df(self, name_prefix):
+        """Downloads a blob from the bucket."""
+        storage_client = storage.Client()
+
+        bucket = storage_client.bucket(BUCKET)
+        blob = bucket.blob('{}.csv'.format(name_prefix))
+        txt = blob.download_as_string()
+        return pd.read_csv(BytesIO(txt), index_col=0)
 
     def _upload_df_as_pkl_blob(self, df, name_prefix):
         self._upload_file_blob(BytesIO(pickle.dumps(df)), '{}.pkl'.format(name_prefix))
 
+    def _download_pkl_blob_as_df(self, name_prefix):
+        """Downloads a blob from the bucket."""
+        storage_client = storage.Client()
+
+        bucket = storage_client.bucket(BUCKET)
+        blob = bucket.blob('{}.pkl'.format(name_prefix))
+        txt = blob.download_as_string()
+        return pd.read_pickle(BytesIO(txt))
+
+    def _local_pkl_path(self, name):
+        return '{}/{}.pkl'.format(DATA_DIR, name)
+
+    def _read_local_pkl(self, name):
+        file = self._local_pkl_path(name)
+        print('reading "{}"'.format(file))
+        return pd.read_pickle(file)
+
+    def _save_local_pkl(self, thing, name):
+        file = self._local_pkl_path(name)
+        pd.to_pickle(thing, file)
+        print('saved "{}"'.format(file))
+
+    def load_pkl_file(self, file_prefix):
+        #TODO: Make this class or static method?
+        if USE_LOCAL_DIR:
+            return self._read_local_pkl(file_prefix)
+        else:
+            return self._download_pkl_blob_as_df(file_prefix)
+
     def save_pkl_file(self, obj, file_prefix):
-        self._upload_df_as_pkl_blob(obj, file_prefix)
+        if USE_LOCAL_DIR:
+            return self._save_local_pkl(obj, file_prefix)
+        else:
+            return self._upload_df_as_pkl_blob(obj, file_prefix)
 
 
 def preprocess_raw_df(df):
