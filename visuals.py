@@ -2,11 +2,11 @@ import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 import numpy as np
+from datetime import timedelta
 import cufflinks as cf
 import json
 
-from __init__ import *
-from preprocess_data import *
+from data_handling import *
 
 
 def covid_map(fd, counties):
@@ -24,6 +24,7 @@ def covid_map(fd, counties):
                              )
     f.update_layout(margin={"r":0, "t":0, "l":0, "b":0})
     return f
+
 
 def county_fig(df):
     df = df.round(1)
@@ -100,7 +101,6 @@ def county_fig(df):
                                tickson="boundaries", ticklen=3, tickangle=45)
 
                     )
-    # fig.show()
     return fig
 
 

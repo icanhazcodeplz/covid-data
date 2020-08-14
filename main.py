@@ -3,9 +3,8 @@ import dash_core_components as dcc
 import dash_html_components as html
 from dash.dependencies import Input, Output
 
-from __init__ import *
-from data_handling.main import *
-from preprocess_data import *
+from constants import *
+from data_handling import *
 from visuals import *
 
 
@@ -36,7 +35,7 @@ def generate_table(dataframe, max_rows=10):
 
 
 app.layout = html.Div(children=[
-    dcc.Markdown('''
+    dcc.Markdown("""
     # COVID-19 Hot Spots
     Welcome! This dashboard is, to say the least, a work in progress.
     It is built using [Plotly Dash](https://plotly.com/dash/) with data from 
@@ -44,7 +43,7 @@ app.layout = html.Div(children=[
     The source code is available on 
     [Github](https://github.com/icanhazcodeplz/covid-data). The inspiration for 
     the map is from the [NYTimes](https://www.nytimes.com/interactive/2020/us/coronavirus-us-cases.html).
-    '''),
+    """),
     dcc.Graph(figure=covid_map(fd, counties), id='cases-map'),
     html.Div([
         html.Div([
@@ -69,8 +68,11 @@ def county_display(fips):
     county_name = fd.fips_county_dict[fips]
     county_pop = fd.fips_pop_dict[fips]
     county_df = county_data(fd.cases_df[fips], county_pop)
+    debug_str = dcc.Markdown('''Debug Info: Refreshed {}. Last refresh {}. Fips = {}. Pop = {}
+            '''.format(refreshed, fd.last_refresh_time, fips, county_pop))
     if county_df is None:
-        return html.H4('No recorded positive cases in {}'.format(county_name))
+        return html.Div([html.H4('No recorded positive cases in {}'.format(county_name)),
+                        debug_str])
     # summary_df, trend = county_summary(county_s, county_rate_s, )
     fig = county_fig(county_df)
     return html.Div(children=[
@@ -79,11 +81,7 @@ def county_display(fips):
         dcc.Graph(figure=fig),
         html.H1(''),
         html.H1(''),
-        dcc.Markdown('''
-            Debug Info
-            Refreshed {}. Last refresh {}
-            Fips = {}. Pop = {}
-            '''.format(refreshed, fd.last_refresh_time, fips, county_pop))
+        debug_str
     ])
 
 
@@ -105,4 +103,18 @@ def map_click_or_county_selection(clickData, value):
 
 if __name__ == '__main__':
     app.run_server(debug=True, port=8080)
+
+
+
+"""" Ideas
+https://www.larimer.org/health/communicable-disease/coronavirus-covid-19/larimer-county-positive-covid-19-numbers
+https://www.digitalocean.com/community/pages/hub-for-good
+https://covid19-dash.herokuapp.com/
+https://covid19mtl.ca/en
+https://covid19-dashboard-online.herokuapp.com/
+https://experience.arcgis.com/experience/a6f23959a8b14bfa989e3cda29297ded
+https://www.esri.com/en-us/covid-19/overview#image3
+https://graphics.reuters.com/HEALTH-CORONAVIRUS/USA-TRENDS/dgkvlgkrkpb/index.html
+https://covidtracking.com/data#chart-annotations
+"""
 

@@ -3,14 +3,9 @@ import re
 from google.cloud import storage
 import pickle
 from io import BytesIO, StringIO
+from datetime import datetime
 
-
-CASES_FILE = 'https://raw.githubusercontent.com/CSSEGISandData/COVID-19/master/csse_covid_19_data/csse_covid_19_time_series/time_series_covid19_confirmed_US.csv'
-DEATHS_FILE = 'https://raw.githubusercontent.com/CSSEGISandData/COVID-19/master/csse_covid_19_data/csse_covid_19_time_series/time_series_covid19_deaths_US.csv'
-BUCKET = 'covid-283120.appspot.com'
-USE_LOCAL_DIR = False
-DATA_DIR = 'processed_data'
-
+from constants import *
 
 
 class DataHandler:
@@ -135,3 +130,102 @@ def get_and_save_data(_):
     DataHandler().save_pkl_file(cases_df, 'cases_df')
     DataHandler().save_pkl_file(pop_df, 'pop_df')
     return f'Completed'
+
+
+def county_series(df, county_key):
+    county_s = df[df['Combined_Key'] == county_key]
+    date_cols_bool = [bool(re.match('\d*/\d*/\d\d', c)) for c in
+                      county_s.columns]
+    county_s = county_s.iloc[:, date_cols_bool]
+    county_s = county_s.T
+    county_s.index = pd.to_datetime(county_s.index)
+    county_s.columns = ['cases']
+    return county_s['cases']
+
+
+def clean_county_s(county_s):
+    if county_s.sum() > 0:
+        while county_s[0] == 0.0:
+            county_s = county_s[1:]
+        #FIXME: Remove positive tests from previous day instead?
+        county_s = county_s.clip(lower=0)
+        return county_s
+    else:
+        return None
+
+
+def county_data(cases, pop):
+    if cases.sum() == 0:
+        return None
+
+    df = cases.to_frame('cases')
+    df['cases_rate'] = df['cases'] / pop * 100000
+
+    df['cases_ave'] = df['cases'].rolling(7, ).mean()
+    df['cases_ave_rate'] = df['cases_ave'] / pop * 100000
+    return df.dropna()
+
+
+def county_summary(county_s, county_rate_s):
+
+    yest = county_s.iloc[-1]
+    week = county_s.tail(7).sum()
+    two_week_ago = county_s.tail(14).head(7).sum()
+    if two_week_ago > 0:
+        week_change = (week / two_week_ago - 1) * 100
+    elif (two_week_ago == 0) and (week == 0):
+        week_change = 0
+    else:
+        week_change = 100
+
+
+    # week_change = int(round(week_change))
+    # if week_change >= 0:
+    #     week_change = '+{}%'.format(week_change)
+    # else:
+    #     week_change = '{}%'.format(week_change)
+
+    if week < 10:
+        trend = 'N/A'
+    elif week_change < -20:
+        trend = 'Falling Quickly'
+    elif week_change < -2:
+        trend = 'Falling Slowly'
+    elif week_change > 20:
+        trend = 'Rising Quickly'
+    elif week_change > 2:
+        trend = 'Rising Slowly'
+    else:
+        trend = 'No Change'
+
+    # summary_df = pd.DataFrame(data=[cases, case_rate],
+    #                           columns=['', 'Yesterday', 'Past Week'])
+    # return summary_df, trend
+
+
+class FreshData:
+
+    def __init__(self):
+        self.map_df = DataHandler().load_pkl_file('map_df')
+        self.cases_df = DataHandler().load_pkl_file('cases_df')
+        self.pop_df = DataHandler().load_pkl_file('pop_df')
+        self.fips_pop_dict = self.pop_df['Population'].to_dict()
+        self.fips_county_dict = self.pop_df['Combined_Key'].to_dict()
+
+        self.last_refresh_time = datetime.now()
+
+    def refresh_if_needed(self):
+        stale_secs = (datetime.now() - self.last_refresh_time).total_seconds()
+        stale_hours = stale_secs / 3600
+        if stale_hours > ACCEPTABLE_STALE_HOURS:
+            print('Refreshing data at {}'.format(datetime.now()))
+            self.__init__()
+            return True
+        else:
+            return False
+
+
+if __name__ == '__main__':
+    fd = FreshData()
+    fips = '36047'
+    print()
