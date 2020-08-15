@@ -9,28 +9,39 @@ import json
 from data_handling import *
 
 
-def covid_map(fd, counties):
+def covid_map(fd, counties_geo, states_df, selected_fips=None):
+    # https://en.wikipedia.org/wiki/List_of_geographic_centers_of_the_United_States
+    # https://developers.google.com/public-data/docs/canonical/states_csv
     fd.refresh_if_needed()
     df = fd.map_df
-    t = ["""<b>{}</b><br>Avg. Daily Cases: {:.1f}<br>             Per 100k: {:.1f}""".format(
-        tup.Combined_Key, tup.week_ave, tup.ave_rate) for tup in df.drop(
-        'FIPS', axis=1).itertuples()]
+    if selected_fips is not None:
+        state = df[df['FIPS'] == selected_fips]['State'].values[0]
+        df = df[df['State'] == state]
+        style = 'light'
+    else:
+        state = 'USA'
+        style = 'outdoors'
+
+    t = ["""<b>{} County, {}</b><br>Avg. Daily Cases: {:.1f}<br>             Per 100k: {:.1f}""".format(
+        tup.County, tup.State, tup.week_ave, tup.ave_rate) for tup in df.itertuples()]
+
+    #TODO: Add title to legend or map
     fig = go.Figure(
         go.Choroplethmapbox(
-            geojson=counties, locations=df['FIPS'], z=df['ave_rate'],
+            geojson=counties_geo, locations=df['FIPS'], z=df['ave_rate'],
             customdata=df['week_ave'],
             colorscale='Reds', zmin=0, zmax=50,
             hovertemplate='%{text} <extra></extra>',
             text=t,
-        )
+        ),
     )
 
-    fig.update_layout(mapbox_style="outdoors",
-                      mapbox_accesstoken=open(".mapbox_token").read(), # you will need your own token,
-                      mapbox_zoom=3,
-                      mapbox_center={"lat": 37.0902, "lon": -95.7129},
+    fig.update_layout(mapbox_style=style,
+                      mapbox_accesstoken=open(".mapbox_token").read(),  # you will need your own token,
+                      mapbox_zoom=states_df.loc[state, 'zoom'],
+                      mapbox_center={'lat': states_df.loc[state, 'lat'],
+                                     'lon': states_df.loc[state, 'lon']},
                       margin={"r":0,"t":0,"l":0,"b":0})
-
     return fig
 
 
@@ -106,28 +117,33 @@ def county_fig(df):
 
     fig.update_layout(autosize=False, width=650, height=350,
                       showlegend=False, xaxis_title='hi',
-        # title_text='New Cases in {}'.format(county_name),
-                    margin=dict(l=5, r=5, b=5, t=70, pad=1),
-                    # paper_bgcolor="LightSteelBlue",
-                    hovermode='x unified',
-                    yaxis=dict(title=None),
-                    xaxis=dict(title=None,tickformat='%b %d', tickmode='linear',
-                               tick0=df.index[-days_back_to_start],
-                               dtick=14 * 86400000.0,
-                               showgrid=True, ticks="outside",
-                               tickson="boundaries", ticklen=3, tickangle=45)
-
-                    )
+                      margin=dict(l=5, r=5, b=5, t=70, pad=1),
+                      hovermode='x unified',yaxis=dict(title=None),
+                      xaxis=dict(title=None,
+                                 tickformat='%b %d',
+                                 tickmode='linear',
+                                 tick0=df.index[-days_back_to_start],
+                                 dtick=14 * 86400000.0,
+                                 showgrid=True,
+                                 ticks="outside",
+                                 tickson="boundaries",
+                                 ticklen=3,
+                                 tickangle=45)
+                      )
     return fig
 
 
 if __name__ == '__main__':
-    # with open('geojson-counties-fips.json') as f:
-    #     counties = json.load(f)
-    # fd = FreshData()
-    # f = covid_map(fd, counties)
-    # f.show()
-    # print()
+    with open('data/geojson-counties-fips.json') as f:
+        counties = json.load(f)
+    fd = FreshData()
+    states_df = load_states_csv()
+    fips = '53047'
+    fips = '02290'
+    fips = None
+    f = covid_map(fd, counties, states_df, fips)
+    f.show()
+    print()
 
     fd = FreshData()
     fips = '53047'

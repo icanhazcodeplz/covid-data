@@ -112,7 +112,8 @@ def get_and_save_data(_):
 
     cases_df = new_cases(tot_cases_df)
 
-    pop_df = tot_deaths_df[['FIPS', 'Population', 'Combined_Key']].set_index('FIPS')
+    pop_df = tot_deaths_df[['FIPS', 'Population', 'Admin2', 'Province_State']].set_index('FIPS')
+    pop_df = pop_df.rename({'Admin2': 'County', 'Province_State': 'State'}, axis='columns')
     fips_pop_dict = pop_df['Population'].to_dict()
 
     def per_100k(s):
@@ -121,7 +122,7 @@ def get_and_save_data(_):
     cases_ave_df = cases_df.rolling(7, ).mean().dropna()
     cases_ave_rate_df = cases_ave_df.apply(per_100k)
 
-    map_df = pop_df[['Combined_Key']]
+    map_df = pop_df[['County', 'State']]
     map_df['week_ave'] = cases_ave_df.iloc[-1]
     map_df['ave_rate'] = cases_ave_rate_df.iloc[-1]
     map_df = map_df.reset_index()
@@ -203,6 +204,10 @@ def county_summary(county_s, county_rate_s):
     # return summary_df, trend
 
 
+def load_states_csv():
+    return pd.read_csv('{}/states.csv'.format(DATA_DIR), index_col=0)
+
+
 class FreshData:
 
     def __init__(self):
@@ -210,7 +215,10 @@ class FreshData:
         self.cases_df = DataHandler().load_pkl_file('cases_df')
         self.pop_df = DataHandler().load_pkl_file('pop_df')
         self.fips_pop_dict = self.pop_df['Population'].to_dict()
-        self.fips_county_dict = self.pop_df['Combined_Key'].to_dict()
+
+        tmp = self.pop_df
+        tmp = tmp.County + ' County, ' + tmp.State
+        self.fips_county_dict = tmp.to_dict()
 
         self.last_refresh_time = datetime.now()
 
@@ -226,6 +234,8 @@ class FreshData:
 
 
 if __name__ == '__main__':
-    fd = FreshData()
-    fips = '36047'
+    # load_states_csv()
+    # get_and_save_data('')
+    # fd = FreshData()
+    # fips = '36047'
     print()
