@@ -52,6 +52,10 @@ def county_fig(df):
     fig.add_trace(go.Scatter(
         x=list(df.index), y=list(df['cases_ave_rate']), name='7 Day Average.', line=dict(color='red'))
     )
+    fig.add_trace(go.Scatter(
+        x=list(df.index), y=[50]*len(df), line=dict(color='rgba(0, 0, 0, 0.5)', dash='dash'),
+        hoverinfo='skip')
+    )
 
     fig.add_trace(go.Bar(
         x=list(df.index), y=list(df['cases']), name='Cases',
@@ -64,10 +68,15 @@ def county_fig(df):
         visible=False)
     )
 
-    x_loc = 17
-    cases_rate_annotations = [dict(x=df.index[x_loc], y=df['cases_ave_rate'].iloc[x_loc],
-                             xref="x", yref="y", text='7 Day <br>Average',
-                             ax=0, ay=-30)]
+    x_loc = 20
+    x_loc50 = 11
+    #TODO: Add logic to put annotation below line if max is below 50
+    cases_rate_annotations = [
+        dict(x=df.index[x_loc], y=df['cases_ave_rate'].iloc[x_loc],
+             xref="x", yref="y", text='7 Day <br>Average', ax=0, ay=-30),
+        dict(x=df.index[x_loc50], y=50,
+             xref="x", yref="y", text='50 Cases<br>per 100k', ax=0, ay=-30),
+    ]
     cases_annotations = [dict(x=df.index[x_loc], y=df['cases_ave'].iloc[x_loc],
                              xref="x", yref="y", text='7 Day <br>Average',
                              ax=0, ay=-30)]
@@ -80,23 +89,23 @@ def county_fig(df):
                 direction="right",
                 active=0,
                 showactive=True,
-                x=0.44,
+                x=0.38,
                 y=1.18,
                 buttons=list([
                     dict(label='New Cases per 100k',
                          method="update",
-                         args=[{"visible": [True, True, False, False]},
+                         args=[{"visible": [True, True, True, False, False]},
                                {"annotations": cases_rate_annotations}]),
                     dict(label='New Cases',
                          method="update",
-                         args=[{"visible": [False, False, True, True]},
+                         args=[{"visible": [False, False, False, True, True]},
                                {"annotations": cases_annotations}]),
                 ]),
             )
         ])
 
     fig.update_layout(autosize=False, width=650, height=350,
-                      showlegend=False,
+                      showlegend=False, xaxis_title='hi',
         # title_text='New Cases in {}'.format(county_name),
                     margin=dict(l=5, r=5, b=5, t=70, pad=1),
                     # paper_bgcolor="LightSteelBlue",
@@ -113,12 +122,12 @@ def county_fig(df):
 
 
 if __name__ == '__main__':
-    with open('geojson-counties-fips.json') as f:
-        counties = json.load(f)
-    fd = FreshData()
-    f = covid_map(fd, counties)
-    f.show()
-    print()
+    # with open('geojson-counties-fips.json') as f:
+    #     counties = json.load(f)
+    # fd = FreshData()
+    # f = covid_map(fd, counties)
+    # f.show()
+    # print()
 
     fd = FreshData()
     fips = '53047'
