@@ -11,19 +11,27 @@ from data_handling import *
 
 def covid_map(fd, counties):
     fd.refresh_if_needed()
-    f = px.choropleth_mapbox(fd.map_df, geojson=counties, locations='FIPS', color='ave_rate',
-                             color_continuous_scale='Reds', #"YlOrRd",
-                             range_color=(0, 40),
-                             mapbox_style="carto-positron",
-                             zoom=3, center={"lat": 37.0902, "lon": -95.7129},
-                             opacity=0.5,
-                             hover_data=dict(FIPS=False, Combined_Key=True, week_ave=':.1f', ave_rate=':.1f'),
-                             labels=dict(Combined_Key='County',
-                                         week_ave='Average Daily Cases',
-                                         ave_rate='Average Daily Cases Per 100k')
-                             )
-    f.update_layout(margin={"r":0, "t":0, "l":0, "b":0})
-    return f
+    df = fd.map_df
+    t = ["""<b>{}</b><br>Avg. Daily Cases: {:.1f}<br>             Per 100k: {:.1f}""".format(
+        tup.Combined_Key, tup.week_ave, tup.ave_rate) for tup in df.drop(
+        'FIPS', axis=1).itertuples()]
+    fig = go.Figure(
+        go.Choroplethmapbox(
+            geojson=counties, locations=df['FIPS'], z=df['ave_rate'],
+            customdata=df['week_ave'],
+            colorscale='Reds', zmin=0, zmax=50,
+            hovertemplate='%{text} <extra></extra>',
+            text=t,
+        )
+    )
+
+    fig.update_layout(mapbox_style="outdoors",
+                      mapbox_accesstoken=open(".mapbox_token").read(), # you will need your own token,
+                      mapbox_zoom=3,
+                      mapbox_center={"lat": 37.0902, "lon": -95.7129},
+                      margin={"r":0,"t":0,"l":0,"b":0})
+
+    return fig
 
 
 def county_fig(df):
@@ -72,14 +80,14 @@ def county_fig(df):
                 direction="right",
                 active=0,
                 showactive=True,
-                x=0.34,
-                y=1.16,
+                x=0.44,
+                y=1.18,
                 buttons=list([
-                    dict(label='Cases per 100k',
+                    dict(label='New Cases per 100k',
                          method="update",
                          args=[{"visible": [True, True, False, False]},
                                {"annotations": cases_rate_annotations}]),
-                    dict(label='Total Cases',
+                    dict(label='New Cases',
                          method="update",
                          args=[{"visible": [False, False, True, True]},
                                {"annotations": cases_annotations}]),
@@ -105,6 +113,13 @@ def county_fig(df):
 
 
 if __name__ == '__main__':
+    with open('geojson-counties-fips.json') as f:
+        counties = json.load(f)
+    fd = FreshData()
+    f = covid_map(fd, counties)
+    f.show()
+    print()
+
     fd = FreshData()
     fips = '53047'
     county_name = fd.fips_county_dict[fips]
