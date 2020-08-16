@@ -20,13 +20,13 @@ class DataHandler:
         print("String uploaded to {}.".format(destination_blob_name))
 
     def _upload_file_blob(self, file, destination_blob_name):
-        """Uploads a string to the bucket."""
+        """Uploads a file blob to the bucket."""
         storage_client = storage.Client()
         bucket = storage_client.bucket(BUCKET)
         blob = bucket.blob(destination_blob_name)
 
         blob.upload_from_file(file)
-        print("String uploaded to {}.".format(destination_blob_name))
+        print("String uploaded to {}".format(destination_blob_name)) if LOG_LEVEL > 0 else None
 
     def _upload_df_as_csv_blob(self, df, name_prefix):
         csv = StringIO()
@@ -59,13 +59,13 @@ class DataHandler:
 
     def _read_local_pkl(self, name):
         file = self._local_pkl_path(name)
-        print('reading "{}"'.format(file))
+        print('reading "{}"'.format(file)) if LOG_LEVEL > 0 else None
         return pd.read_pickle(file)
 
     def _save_local_pkl(self, thing, name):
         file = self._local_pkl_path(name)
         pd.to_pickle(thing, file)
-        print('saved "{}"'.format(file))
+        print('saved "{}"'.format(file)) if LOG_LEVEL > 0 else None
 
     def load_pkl_file(self, file_prefix):
         #TODO: Make this class or static method?
@@ -85,7 +85,6 @@ def preprocess_raw_df(df):
     df = df.dropna()
     df = df[~(df['Admin2'] == 'Unassigned')]
     df = df[~(df['Admin2'].str.contains('Out of'))]
-    df['Combined_Key'] = df['Combined_Key'].apply(lambda x: x.replace(', US', ''))
 
     # Convert fips to string and front fill zeros to get to 5 characters
     df['FIPS'] = df['FIPS'].apply(lambda n: str.zfill(str(int(n)), 5))
@@ -111,6 +110,9 @@ def get_and_save_data(_):
     tot_deaths_df = preprocess_raw_df(tot_deaths_df)
 
     cases_df = new_cases(tot_cases_df)
+
+    # Start data on March 1st.
+    cases_df = cases_df.iloc[38:]
 
     pop_df = tot_deaths_df[['FIPS', 'Population', 'Admin2', 'Province_State']].set_index('FIPS')
     pop_df = pop_df.rename({'Admin2': 'County', 'Province_State': 'State'}, axis='columns')
@@ -222,6 +224,11 @@ class FreshData:
 
         self.last_refresh_time = datetime.now()
 
+        t = ["""<b>{} County, {}</b><br>Avg. Daily Cases: {:.1f}<br>             Per 100k: {:.1f}""".format(
+            tup.County, tup.State, tup.week_ave, tup.ave_rate) for tup in self.map_df.itertuples()]
+        self.map_df['text'] = t
+
+
     def refresh_if_needed(self):
         stale_secs = (datetime.now() - self.last_refresh_time).total_seconds()
         stale_hours = stale_secs / 3600
@@ -235,7 +242,7 @@ class FreshData:
 
 if __name__ == '__main__':
     # load_states_csv()
-    # get_and_save_data('')
+    get_and_save_data('')
     # fd = FreshData()
     # fips = '36047'
     print()
