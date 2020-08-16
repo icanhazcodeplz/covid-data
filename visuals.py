@@ -5,52 +5,87 @@ import numpy as np
 from datetime import timedelta
 import cufflinks as cf
 import json
+from copy import deepcopy
 
 from data_handling import *
 
+FULL_MAP_W = 844
+FULL_MAP_STYLE = 'outdoors'
 
-def covid_map(fd, counties_geo, states_df, selected_fips=None):
+def covid_map(fd, counties_geo, states_df):
     # https://en.wikipedia.org/wiki/List_of_geographic_centers_of_the_United_States
     # https://developers.google.com/public-data/docs/canonical/states_csv
     fd.refresh_if_needed()
     df = fd.map_df
-    if selected_fips is not None:
-        state = df[df['FIPS'] == selected_fips]['State'].values[0]
-        df = df[df['State'] == state]
-        style = 'light'
-    else:
-        state = 'USA'
-        style = 'outdoors'
+    state = 'USA'
 
-    t = ["""<b>{} County, {}</b><br>Avg. Daily Cases: {:.1f}<br>             Per 100k: {:.1f}""".format(
-        tup.County, tup.State, tup.week_ave, tup.ave_rate) for tup in df.itertuples()]
-
-    #TODO: Add title to legend or map
     fig = go.Figure(
         go.Choroplethmapbox(
-            geojson=counties_geo, locations=df['FIPS'], z=df['ave_rate'],
+            colorbar=dict(title=dict(text='Average<br>Daily<br>Cases<br>per 100k',
+                                     font=dict(size=14, color='#A10C0C')),
+                          x=1
+                          ),
+            geojson=counties_geo,
+            locations=df['FIPS'],
+            z=df['ave_rate'],
             customdata=df['week_ave'],
+            text=df['text'],
             colorscale='Reds', zmin=0, zmax=50,
             hovertemplate='%{text} <extra></extra>',
-            text=t,
+            meta=state
         ),
     )
 
-    fig.update_layout(mapbox_style=style,
-                      mapbox_accesstoken=open(".mapbox_token").read(),  # you will need your own token,
-                      mapbox_zoom=states_df.loc[state, 'zoom'],
-                      mapbox_center={'lat': states_df.loc[state, 'lat'],
-                                     'lon': states_df.loc[state, 'lon']},
-                      margin={"r":0,"t":0,"l":0,"b":0})
+    fig.update_layout(
+        mapbox_accesstoken=open(".mapbox_token").read(),  # you will need your own token,
+        mapbox_style=FULL_MAP_STYLE,
+        width=FULL_MAP_W,
+        margin=dict(l=3, r=3, b=3, t=13, pad=10),
+        mapbox_zoom=states_df.loc[state, 'zoom'],
+        mapbox_center=dict(lat=states_df.loc[state, 'lat'],
+                           lon=states_df.loc[state, 'lon']),
+    )
     return fig
 
 
-def county_fig(df):
+def update_map(fig, fd, states_df, selected_fips=None):
+    current_state = fig.data[0].meta
+    df = fd.map_df
+    if selected_fips is None:
+        state = 'USA'
+        width = FULL_MAP_W
+        style = FULL_MAP_STYLE
+    else:
+        state = df[df['FIPS'] == selected_fips]['State'].values[0]
+        df = df[df['State'] == state]
+        width = 600
+        style = 'light'
+
+    if current_state == state:
+        return fig
+
+    # TODO: File bug report about plotly_restyle not changing type to numpy automatically
+    fig.plotly_restyle(dict(locations=df['FIPS'].to_numpy(),
+                            z=df['ave_rate'].to_numpy(),
+                            customdata=df['week_ave'].to_numpy(),
+                            text=df['text'].to_numpy(),
+                            meta=state
+                            )
+                       )
+    fig.update_layout(mapbox_zoom=states_df.loc[state, 'zoom'],
+                      mapbox_center={'lat': states_df.loc[state, 'lat'],
+                                     'lon': states_df.loc[state, 'lon']},
+                      width=width,
+                      mapbox_style=style
+                      )
+    return fig
+
+def county_fig(df, county_name):
     df = df.round(1)
     ### find first tick spot
     total_days = len(df)
     days_back_to_start = int(total_days / 14) * 14 + 2
-    # Hacky fix to add extra day at end so that the tick-mark will show
+    # Hacky fix to add extra day at end so that the last tick-mark will show
     new_i = df.index[-1] + timedelta(days=1)
     df.loc[new_i] = [np.nan] * len(df.columns)
 
@@ -100,8 +135,8 @@ def county_fig(df):
                 direction="right",
                 active=0,
                 showactive=True,
-                x=0.38,
-                y=1.18,
+                x=0.505,
+                y=1.2,
                 buttons=list([
                     dict(label='New Cases per 100k',
                          method="update",
@@ -115,10 +150,13 @@ def county_fig(df):
             )
         ])
 
-    fig.update_layout(autosize=False, width=650, height=350,
-                      showlegend=False, xaxis_title='hi',
-                      margin=dict(l=5, r=5, b=5, t=70, pad=1),
-                      hovermode='x unified',yaxis=dict(title=None),
+    fig.update_layout(title=county_name,
+                      autosize=False,
+                      width=500,
+                      height=350,
+                      showlegend=False,
+                      margin=dict(l=5, r=5, b=5, t=100, pad=1),
+                      hovermode='x unified',
                       xaxis=dict(title=None,
                                  tickformat='%b %d',
                                  tickmode='linear',
@@ -134,22 +172,23 @@ def county_fig(df):
 
 
 if __name__ == '__main__':
+    # fd = FreshData()
+    # fips = '53047'
+    # county_name = fd.fips_county_dict[fips]
+    # county_pop = fd.fips_pop_dict[fips]
+    # county_df = county_data(fd.cases_df[fips], county_pop)
+    # f = county_fig(county_df, county_name)
+    # f.show()
+
     with open('data/geojson-counties-fips.json') as f:
         counties = json.load(f)
     fd = FreshData()
     states_df = load_states_csv()
     fips = '53047'
-    fips = '02290'
-    fips = None
-    f = covid_map(fd, counties, states_df, fips)
+    fips2 = '02290'
+    f = covid_map(fd, counties)
     f.show()
-    print()
-
-    fd = FreshData()
-    fips = '53047'
-    county_name = fd.fips_county_dict[fips]
-    county_pop = fd.fips_pop_dict[fips]
-    county_df = county_data(fd.cases_df[fips], county_pop)
-    f = county_fig(county_df)
-    f.show()
+    # f = update_map(f, fd, states_df, fips)
+    # f = update_map(f, fd, states_df, fips2)
+    #
     print()
