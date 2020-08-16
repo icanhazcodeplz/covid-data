@@ -21,5 +21,6 @@ google-cloud-storage==1.30.0
 google-crc32c==0.1.0
 google-resumable-media==0.7.1
 googleapis-common-protos==1.52.0
+dash-bootstrap-components==0.10.3
 
 gunicorn
