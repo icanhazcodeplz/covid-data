@@ -81,57 +81,90 @@ class DataHandler:
             return self._upload_df_as_pkl_blob(obj, file_prefix)
 
 
-def preprocess_raw_df(df):
+def process_for_county_level(df):
     df = df.dropna()
     df = df[~(df['Admin2'] == 'Unassigned')]
     df = df[~(df['Admin2'].str.contains('Out of'))]
 
     # Convert fips to string and front fill zeros to get to 5 characters
     df['FIPS'] = df['FIPS'].apply(lambda n: str.zfill(str(int(n)), 5))
+    df = df.set_index('FIPS')
     return df
 
 
-def new_cases(cases_df):
-    df = cases_df.set_index('FIPS')
+def new_cases(df):
     date_cols_bool = [bool(re.match('\d*/\d*/\d\d', c)) for c in df.columns]
     df = df.iloc[:, date_cols_bool].T
     df = df.diff()[1:]
     df = df.clip(lower=0) #FIXME: Remove positive tests from previous day instead?
     df.index = pd.to_datetime(df.index)
+
+    # Only show data from March 1st on
+    df = df.iloc[38:]
     return df
 
 
 def get_and_save_data(_):
-    print('Loading "{}"'.format(CASES_FILE))
+    print('Loading "{}"'.format(CASES_FILE)) if LOG_LEVEL > 0 else None
     tot_cases_df = pd.read_csv(CASES_FILE)
-    tot_cases_df = preprocess_raw_df(tot_cases_df)
-    print('Loading "{}"'.format(DEATHS_FILE))
+    print('Loading "{}"'.format(DEATHS_FILE)) if LOG_LEVEL > 0 else None
     tot_deaths_df = pd.read_csv(DEATHS_FILE)
-    tot_deaths_df = preprocess_raw_df(tot_deaths_df)
 
-    cases_df = new_cases(tot_cases_df)
+    # FIXME: This is some ugly code. Clean it up!!!
+    uid_pop = tot_deaths_df[['UID', 'Population']].set_index('UID',drop=True)
+    state_cases_df = tot_cases_df.join(uid_pop, on='UID')
+    state_cases_df = state_cases_df.drop(['UID', 'iso2', 'iso3', 'code3', 'FIPS', 'Admin2', 'Country_Region', 'Lat', 'Long_', 'Combined_Key'], axis='columns')
+    state_cases_df = state_cases_df.rename({'Province_State': 'state'}, axis='columns')
+    state_cases_df = state_cases_df.groupby(['state']).sum()
+    state_cases_df = state_cases_df.drop(
+        ['Diamond Princess', 'Guam', 'American Samoa', 'Grand Princess',
+         'Northern Mariana Islands', 'Virgin Islands'], axis='rows')
+    state_cases_df.loc['USA'] = state_cases_df.sum()
+    state_map_df = state_cases_df['Population'].to_frame('pop')
+    state_pop_dict = state_cases_df['Population'].to_dict()
+    state_cases_df = state_cases_df.drop('Population', axis='columns')
+    state_df = new_cases(state_cases_df)
 
-    # Start data on March 1st.
-    cases_df = cases_df.iloc[38:]
+    tot_cases_df = process_for_county_level(tot_cases_df)
+    tot_deaths_df = process_for_county_level(tot_deaths_df)
 
-    pop_df = tot_deaths_df[['FIPS', 'Population', 'Admin2', 'Province_State']].set_index('FIPS')
-    pop_df = pop_df.rename({'Admin2': 'County', 'Province_State': 'State'}, axis='columns')
-    fips_pop_dict = pop_df['Population'].to_dict()
+    county_df = new_cases(tot_cases_df)
 
-    def per_100k(s):
-        return s / fips_pop_dict[s.name] * 100000
+    county_meta_df = tot_deaths_df[['Population', 'Admin2', 'Province_State']]
+    county_meta_df = county_meta_df.rename({'Admin2': 'county', 'Province_State': 'state',
+                            'Population': 'pop'}, axis='columns')
 
-    cases_ave_df = cases_df.rolling(7, ).mean().dropna()
-    cases_ave_rate_df = cases_ave_df.apply(per_100k)
+    fips_pop_dict = county_meta_df['pop'].to_dict()
+    # def per_100k(s):
+    #     return s / fips_pop_dict[s.name] * 100000
 
-    map_df = pop_df[['County', 'State']]
-    map_df['week_ave'] = cases_ave_df.iloc[-1]
-    map_df['ave_rate'] = cases_ave_rate_df.iloc[-1]
-    map_df = map_df.reset_index()
+    def make_map_df(df, map_df, loc_pop_dict):
+        ave_df = df.rolling(7, ).mean().dropna()
+        ave_rate_df = ave_df.apply(lambda s: s / loc_pop_dict[s.name] * 100000)
+        map_df['week_ave'] = ave_df.iloc[-1]
+        map_df['ave_rate'] = ave_rate_df.iloc[-1]
+        return map_df.reset_index()
 
-    DataHandler().save_pkl_file(map_df, 'map_df')
-    DataHandler().save_pkl_file(cases_df, 'cases_df')
-    DataHandler().save_pkl_file(pop_df, 'pop_df')
+    county_map_df = county_meta_df[['county', 'state']]
+    county_map_df = make_map_df(county_df, county_map_df, fips_pop_dict)
+
+    state_map_df = make_map_df(state_df, state_map_df, state_pop_dict)
+
+    county_map_df['text'] = [
+        '<b>{} County, {}</b><br>Avg. Daily Cases: {:.1f}<br>             Per 100k: {:.1f}'.format(
+        tup.county, tup.state, tup.week_ave, tup.ave_rate) for tup in county_map_df.itertuples()]
+
+    state_map_df['text'] = [
+        '<b>{}</b><br>Avg. Daily Cases: {:.1f}<br>             Per 100k: {:.1f}'.format(
+        tup.state, tup.week_ave, tup.ave_rate) for tup in state_map_df.itertuples()]
+
+    DataHandler().save_pkl_file(county_map_df, 'county_map_df')
+    DataHandler().save_pkl_file(county_df, 'county_df')
+    DataHandler().save_pkl_file(county_meta_df, 'county_meta_df')
+
+    DataHandler().save_pkl_file(state_pop_dict, 'state_pop_dict')
+    DataHandler().save_pkl_file(state_df, 'state_df')
+    DataHandler().save_pkl_file(state_map_df, 'state_map_df')
     return f'Completed'
 
 
@@ -146,18 +179,7 @@ def county_series(df, county_key):
     return county_s['cases']
 
 
-def clean_county_s(county_s):
-    if county_s.sum() > 0:
-        while county_s[0] == 0.0:
-            county_s = county_s[1:]
-        #FIXME: Remove positive tests from previous day instead?
-        county_s = county_s.clip(lower=0)
-        return county_s
-    else:
-        return None
-
-
-def county_data(cases, pop):
+def cases_data_for_graph(cases, pop):
     if cases.sum() == 0:
         return None
 
@@ -169,43 +191,6 @@ def county_data(cases, pop):
     return df.dropna()
 
 
-def county_summary(county_s, county_rate_s):
-
-    yest = county_s.iloc[-1]
-    week = county_s.tail(7).sum()
-    two_week_ago = county_s.tail(14).head(7).sum()
-    if two_week_ago > 0:
-        week_change = (week / two_week_ago - 1) * 100
-    elif (two_week_ago == 0) and (week == 0):
-        week_change = 0
-    else:
-        week_change = 100
-
-
-    # week_change = int(round(week_change))
-    # if week_change >= 0:
-    #     week_change = '+{}%'.format(week_change)
-    # else:
-    #     week_change = '{}%'.format(week_change)
-
-    if week < 10:
-        trend = 'N/A'
-    elif week_change < -20:
-        trend = 'Falling Quickly'
-    elif week_change < -2:
-        trend = 'Falling Slowly'
-    elif week_change > 20:
-        trend = 'Rising Quickly'
-    elif week_change > 2:
-        trend = 'Rising Slowly'
-    else:
-        trend = 'No Change'
-
-    # summary_df = pd.DataFrame(data=[cases, case_rate],
-    #                           columns=['', 'Yesterday', 'Past Week'])
-    # return summary_df, trend
-
-
 def load_states_csv():
     return pd.read_csv('{}/states.csv'.format(DATA_DIR), index_col=0)
 
@@ -213,21 +198,19 @@ def load_states_csv():
 class FreshData:
 
     def __init__(self):
-        self.map_df = DataHandler().load_pkl_file('map_df')
-        self.cases_df = DataHandler().load_pkl_file('cases_df')
-        self.pop_df = DataHandler().load_pkl_file('pop_df')
-        self.fips_pop_dict = self.pop_df['Population'].to_dict()
+        self.county_map_df = DataHandler().load_pkl_file('county_map_df')
+        self.county_df = DataHandler().load_pkl_file('county_df')
+        self.county_meta_df = DataHandler().load_pkl_file('county_meta_df')
 
-        tmp = self.pop_df
-        tmp = tmp.County + ' County, ' + tmp.State
+        self.state_pop_dict = DataHandler().load_pkl_file('state_pop_dict')
+        self.state_df = DataHandler().load_pkl_file('state_df')
+        self.state_map_df = DataHandler().load_pkl_file('state_map_df')
+
+        tmp = self.county_meta_df.county + ' County, ' + self.county_meta_df.state
         self.fips_county_dict = tmp.to_dict()
+        self.fips_pop_dict = self.county_meta_df['pop'].to_dict()
 
         self.last_refresh_time = datetime.now()
-
-        t = ["""<b>{} County, {}</b><br>Avg. Daily Cases: {:.1f}<br>             Per 100k: {:.1f}""".format(
-            tup.County, tup.State, tup.week_ave, tup.ave_rate) for tup in self.map_df.itertuples()]
-        self.map_df['text'] = t
-
 
     def refresh_if_needed(self):
         stale_secs = (datetime.now() - self.last_refresh_time).total_seconds()
@@ -241,8 +224,58 @@ class FreshData:
 
 
 if __name__ == '__main__':
-    # load_states_csv()
     get_and_save_data('')
-    # fd = FreshData()
-    # fips = '36047'
+
     print()
+    # load_states_csv()
+    # fd = FreshData()
+    print()
+
+
+# def clean_county_s(county_s):
+#     if county_s.sum() > 0:
+#         while county_s[0] == 0.0:
+#             county_s = county_s[1:]
+#         #FIXME: Remove positive tests from previous day instead?
+#         county_s = county_s.clip(lower=0)
+#         return county_s
+#     else:
+#         return None
+
+#
+# def county_summary(county_s, county_rate_s):
+#
+#     yest = county_s.iloc[-1]
+#     week = county_s.tail(7).sum()
+#     two_week_ago = county_s.tail(14).head(7).sum()
+#     if two_week_ago > 0:
+#         week_change = (week / two_week_ago - 1) * 100
+#     elif (two_week_ago == 0) and (week == 0):
+#         week_change = 0
+#     else:
+#         week_change = 100
+#
+#
+#     # week_change = int(round(week_change))
+#     # if week_change >= 0:
+#     #     week_change = '+{}%'.format(week_change)
+#     # else:
+#     #     week_change = '{}%'.format(week_change)
+#
+#     if week < 10:
+#         trend = 'N/A'
+#     elif week_change < -20:
+#         trend = 'Falling Quickly'
+#     elif week_change < -2:
+#         trend = 'Falling Slowly'
+#     elif week_change > 20:
+#         trend = 'Rising Quickly'
+#     elif week_change > 2:
+#         trend = 'Rising Slowly'
+#     else:
+#         trend = 'No Change'
+#
+#     # summary_df = pd.DataFrame(data=[cases, case_rate],
+#     #                           columns=['', 'Yesterday', 'Past Week'])
+#     # return summary_df, trend
+#

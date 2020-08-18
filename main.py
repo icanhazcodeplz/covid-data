@@ -10,33 +10,23 @@ from visuals import *
 
 
 # external_stylesheets = ['https://codepen.io/chriddyp/pen/bWLwgP.css']
-app = dash.Dash(external_stylesheets=[dbc.themes.CYBORG])
+app = dash.Dash(external_stylesheets=[dbc.themes.CYBORG],
+                prevent_initial_callbacks=True)
 
-app.title = 'COVID-19 Dashboard'
+app.title = 'COVID-19 Hot Spots'
 server = app.server
 
 #### GLOBAL VARS ##############################################################
 with open('{}/geojson-counties-fips.json'.format(DATA_DIR)) as f:
-    counties = json.load(f)
+    counties_geo = json.load(f)
 fd = FreshData()
-county_keys = [dict(value=k, label=v) for k, v in fd.fips_county_dict.items()]
-states_df = load_states_csv()
-fig_map = covid_map(fd, counties, states_df)
+states_meta_df = load_states_csv()
+state_keys = [dict(value=s, label=s) for s in states_meta_df.index]
 
-#### END GLOBAL VARS ##########################################################
+# FIXME: will fig_map update when the data refreshes???
+fig_map = make_counties_map(fd, counties_geo, states_meta_df)
 
-
-def generate_table(dataframe, max_rows=10):
-    return html.Table([
-        html.Thead(html.Tr([html.Th(col) for col in dataframe.columns])),
-        html.Tbody([
-            html.Tr([
-                html.Td(dataframe.iloc[i][col]) for col in dataframe.columns
-            ]) for i in range(min(len(dataframe), max_rows))
-        ])
-    ])
-
-#FIXME: Not all of these are actually removed! Might be plotly bug
+# FIXME: Not all of these are actually removed! Might be plotly bug
 modebar_buttons_to_remove = ['autoScale2d',
                              'hoverCompareCartesian',
                              'toggleSpikelines',
@@ -62,7 +52,8 @@ modebar_buttons_to_remove = ['autoScale2d',
                              'hoverClosestGeo'
                              'hoverClosestCartesian']
 
-# app.layout = html.Div([
+#### LAYOUT ###################################################################
+
 app.layout = dbc.Container([
     dbc.Row(
         [
@@ -70,33 +61,51 @@ app.layout = dbc.Container([
                 dcc.Markdown("""
                 ## COVID-19 Hot Spots
                 """)
-            ],width={"size": 10, "offset": 0})
-        ]),
-    dbc.Row(
-        [
-            dbc.Col([
-                dcc.Markdown('Click on a county or select from the dropdown'),
-                dcc.Dropdown(id='county-dropdown',
-                             options=county_keys,
-                             # style={"background-color": "#aa2222", "color": "white",},
-                             placeholder='Select a county'),
-                html.Button('Reset Map', id='reset-button'),
-            ], width=4),
-        # FIXME: reset dropdown when county is clicked https://community.plotly.com/t/how-to-clear-the-value-in-dropdown-via-callback/28777
+            ], width={"size": 10, "offset": 0})
         ]),
 
     dbc.Row(
         [
             dbc.Col([
-                dcc.Graph(figure=fig_map,
-                id='cases-map',
-                config={'modeBarButtonsToRemove': modebar_buttons_to_remove}),
-            ], width='auto'),
-            dbc.Col(
-                [html.Div(id='county-display')],
-                width=dict(size=4, order='last')
-                    )
+                dcc.Graph(figure=make_state_map(fd, states_meta_df),
+                          id='usa-map',
+
+                          config={'scrollZoom': False,
+                                  'displayModeBar': False})
+                ], width='auto'),
         ],
+    ),
+
+    dbc.Row(
+        [
+            dbc.Col([
+                dcc.Markdown('Click on a state or select a state from the dropdown'),
+                dcc.Dropdown(id='state-dropdown',
+                             options=state_keys,
+                             # style={"background-color": "#aa2222", "color": "white",},
+                             placeholder='Select a state', value='USA',
+                             clearable=False),
+                html.Button('Reset Map', id='reset-button'),
+            ], width=4),
+        ]),
+
+    dbc.Row(
+        [
+            dbc.Col(
+                [
+                    dcc.Graph(
+                        id='state-map',
+                        figure=fig_map,
+                        config={'displayModeBar': False},
+                    ),
+                ], width='auto'),
+            dbc.Col(
+                [
+                    html.Div(id='state-graph'),
+                    html.Div(id='county-graph'),
+                ], width=dict(size=4, order='last')
+            )
+        ], id='county-row'
     ),
     dcc.Markdown("""
     Built with [Plotly Dash](https://plotly.com/dash/). Data from 
@@ -108,42 +117,71 @@ app.layout = dbc.Container([
 ], fluid=True)
 
 
-def county_display(fips):
+def make_county_graph_dcc(fips):
     if fips is None:
         return ''
-    refreshed = fd.refresh_if_needed()
+    fd.refresh_if_needed()
     county_name = fd.fips_county_dict[fips]
     county_pop = fd.fips_pop_dict[fips]
-    county_df = county_data(fd.cases_df[fips], county_pop)
-    # debug_str = dcc.Markdown('''Debug Info: Refreshed {}. Last refresh {}. Fips = {}. Pop = {}
-    #         '''.format(refreshed, fd.last_refresh_time, fips, county_pop))
+    county_df = cases_data_for_graph(fd.county_df[fips], county_pop)
     if county_df is None:
         return html.H4('No recorded positive cases in {}'.format(county_name))
     # summary_df, trend = county_summary(county_s, county_rate_s, )
-    fig = county_fig(county_df, county_name)
-    return dcc.Graph(figure=fig, config={'modeBarButtonsToRemove': modebar_buttons_to_remove})
+    fig = make_cases_graph(county_df, county_name)
+    return dcc.Graph(figure=fig, config={'displayModeBar': False})
+
+
+def make_state_graph_dcc(state):
+    if state is None:
+        return ''
+    fd.refresh_if_needed()
+    state_pop = fd.state_pop_dict[state]
+    state_df = cases_data_for_graph(fd.state_df[state], state_pop)
+    fig = make_cases_graph(state_df, state)
+    return dcc.Graph(figure=fig, config={'displayModeBar': False})
 
 
 @app.callback(
-    [Output('cases-map', 'figure'),
-    Output('county-display', 'children')],
-    [Input('cases-map', 'clickData'),
-     Input('county-dropdown', 'value'),
-     Input('reset-button', 'n_clicks')])
-def map_click_or_county_selection(clickData, value, _reset_btn):
+    Output('state-dropdown', 'value'),
+    [Input('usa-map', 'clickData'),
+     Input('reset-button', 'n_clicks')], prevent_initial_call=False)
+def map_click_or_county_selection(clickData, _n_clicks):
     ctx = dash.callback_context
-    if not ctx.triggered:  # Initial loading
-        return fig_map, ''
-
     trigger = ctx.triggered[0]['prop_id'].split('.')[0]
-    if trigger == 'cases-map':
-        fips = clickData['points'][0]['location']
-    elif trigger == 'county-dropdown':
-        fips = value
-    elif trigger == 'reset-button':
-        fips = None
+    if trigger == 'usa-map':
+        state = clickData['points'][0]['customdata']
+    else:
+        state = 'USA'
+    return state
 
-    return update_map(fig_map, fd, states_df, fips), county_display(fips)
+
+@app.callback(
+    [Output('state-map', 'figure'),
+    Output('state-graph', 'children')],
+    [Input('state-dropdown', 'value')])
+def make_state_map(value):
+    if value is None:
+        value = 'USA'
+    return update_counties_map(deepcopy(fig_map), fd, states_meta_df, state=value), make_state_graph_dcc(value)
+
+
+@app.callback(
+    Output('county-graph', 'children'),
+    [Input('state-map', 'clickData')])
+def make_county_display(clickData):
+    fips = clickData['points'][0]['location']
+    return make_county_graph_dcc(fips)
+
+
+
+# def fun1(input1):
+#     callbackfun(input)
+#
+# def callbackfun(input):
+#     data = None
+#     return data
+#
+# app.callback(Output('output', 'children'))(callbackfun)
 
 
 if __name__ == '__main__':
@@ -161,5 +199,19 @@ https://experience.arcgis.com/experience/a6f23959a8b14bfa989e3cda29297ded
 https://www.esri.com/en-us/covid-19/overview#image3
 https://graphics.reuters.com/HEALTH-CORONAVIRUS/USA-TRENDS/dgkvlgkrkpb/index.html
 https://covidtracking.com/data#chart-annotations
+
+https://en.wikipedia.org/wiki/List_of_geographic_centers_of_the_United_States
+https://developers.google.com/public-data/docs/canonical/states_csv
+
+def generate_table(dataframe, max_rows=10):
+    return html.Table([
+        html.Thead(html.Tr([html.Th(col) for col in dataframe.columns])),
+        html.Tbody([
+            html.Tr([
+                html.Td(dataframe.iloc[i][col]) for col in dataframe.columns
+            ]) for i in range(min(len(dataframe), max_rows))
+        ])
+    ])
+
 """
 
