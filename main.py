@@ -9,7 +9,6 @@ from data_handling import *
 from visuals import *
 
 
-# external_stylesheets = ['https://codepen.io/chriddyp/pen/bWLwgP.css']
 app = dash.Dash(external_stylesheets=[dbc.themes.CYBORG],
                 prevent_initial_callbacks=True)
 
@@ -58,11 +57,11 @@ app.layout = dbc.Container([
     dbc.Row(
         [
             dbc.Col([
-                dcc.Markdown("""
-                ## COVID-19 Hot Spots
-                """)
-            ], width={"size": 10, "offset": 0})
-        ]),
+                # dcc.Markdown("## COVID-19 Hot Spots"),
+                html.H2("COVID-19 Hot Spots", style={'textAlign': 'center'}),
+            ],)# width={"size": 10, "offset": 0})
+        ],
+    ),
 
     dbc.Row(
         [
@@ -71,64 +70,64 @@ app.layout = dbc.Container([
                           id='usa-map',
 
                           config={'scrollZoom': False,
-                                  'displayModeBar': False})
+                                  'displayModeBar': False,
+                                  'doubleClick': False}) # TODO: Bug report, doubleClick = False does nothing
                 ], width='auto'),
-        ],
-    ),
+        ], justify='center',),
 
     dbc.Row(
         [
             dbc.Col([
-                dcc.Markdown('Click on a state or select a state from the dropdown'),
+                html.H6('Click on a state or select from the dropdown to see county-level data',
+                        style={'textAlign': 'center'}),
+                ])
+        ]),
+
+    dbc.Row(
+        [
+            dbc.Col([
                 dcc.Dropdown(id='state-dropdown',
                              options=state_keys,
                              # style={"background-color": "#aa2222", "color": "white",},
                              placeholder='Select a state', value='USA',
                              clearable=False),
                 html.Button('Reset Map', id='reset-button'),
-            ], width=4),
-        ]),
+            ], width=3),
+            # dbc.Col([
+            # ], width=2),
+        ], justify='center',),
 
     dbc.Row(
         [
             dbc.Col(
                 [
-                    dcc.Graph(
-                        id='state-map',
-                        figure=fig_map,
-                        config={'displayModeBar': False},
+                    dcc.Loading(
+                        type="default",
+                        children=dcc.Graph(id='state-map',figure=fig_map,config={'displayModeBar': False}),
                     ),
                 ], width='auto'),
             dbc.Col(
                 [
-                    html.Div(id='state-graph'),
-                    html.Div(id='county-graph'),
+                    dcc.Loading(
+                        type='default',
+                        children=[html.Div(id='county-graph'),
+                        ]
+                    ),
                 ], width=dict(size=4, order='last')
             )
-        ], id='county-row'
+        ], id='county-row', justify='center',
     ),
-    dcc.Markdown("""
-    Built with [Plotly Dash](https://plotly.com/dash/). Data from 
-    [Johns Hopkins University](https://github.com/CSSEGISandData/COVID-19). 
-    Source code at
-    [Github](https://github.com/icanhazcodeplz/covid-data). Inspiration from 
-     the [New York Times](https://www.nytimes.com/interactive/2020/us/coronavirus-us-cases.html).
-    """),
+    dbc.Row(
+        [
+            dcc.Markdown("""
+            Built with [Plotly Dash](https://plotly.com/dash/). Data from 
+            [Johns Hopkins University](https://github.com/CSSEGISandData/COVID-19). 
+            Source code at
+            [Github](https://github.com/icanhazcodeplz/covid-data). Inspiration from 
+             the [New York Times](https://www.nytimes.com/interactive/2020/us/coronavirus-us-cases.html).
+            """, ),
+        ], justify='center',)
 ], fluid=True)
-
-
-def make_county_graph_dcc(fips):
-    if fips is None:
-        return ''
-    fd.refresh_if_needed()
-    county_name = fd.fips_county_dict[fips]
-    county_pop = fd.fips_pop_dict[fips]
-    county_df = cases_data_for_graph(fd.county_df[fips], county_pop)
-    if county_df is None:
-        return html.H4('No recorded positive cases in {}'.format(county_name))
-    # summary_df, trend = county_summary(county_s, county_rate_s, )
-    fig = make_cases_graph(county_df, county_name)
-    return dcc.Graph(figure=fig, config={'displayModeBar': False})
 
 
 def make_state_graph_dcc(state):
@@ -156,32 +155,29 @@ def map_click_or_county_selection(clickData, _n_clicks):
 
 
 @app.callback(
-    [Output('state-map', 'figure'),
-    Output('state-graph', 'children')],
+    Output('state-map', 'figure'),
     [Input('state-dropdown', 'value')])
 def make_state_map(value):
     if value is None:
         value = 'USA'
-    return update_counties_map(deepcopy(fig_map), fd, states_meta_df, state=value), make_state_graph_dcc(value)
+    return update_counties_map(deepcopy(fig_map), fd, states_meta_df, state=value)
 
 
 @app.callback(
     Output('county-graph', 'children'),
-    [Input('state-map', 'clickData')])
-def make_county_display(clickData):
-    fips = clickData['points'][0]['location']
-    return make_county_graph_dcc(fips)
+    [Input('state-dropdown', 'value'),
+     Input('state-map', 'clickData')])
+def make_county_display(value, clickData):
+    ctx = dash.callback_context
+    trigger = ctx.triggered[0]['prop_id'].split('.')[0]
+    if trigger == 'state-dropdown':
+        fig = make_cases_subplots(fd, value)
+    if trigger == 'state-map':
+        state = clickData['points'][0]['customdata']
+        fips = clickData['points'][0]['location']
+        fig = make_cases_subplots(fd, state, fips)
 
-
-
-# def fun1(input1):
-#     callbackfun(input)
-#
-# def callbackfun(input):
-#     data = None
-#     return data
-#
-# app.callback(Output('output', 'children'))(callbackfun)
+    return dcc.Graph(figure=fig, config={'displayModeBar': False})
 
 
 if __name__ == '__main__':
