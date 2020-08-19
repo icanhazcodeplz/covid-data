@@ -23,7 +23,6 @@ states_meta_df = load_states_csv()
 state_keys = [dict(value=s, label=s) for s in states_meta_df.index]
 
 # FIXME: will fig_map update when the data refreshes???
-fig_map = make_counties_map(fd, counties_geo, states_meta_df)
 
 # FIXME: Not all of these are actually removed! Might be plotly bug
 modebar_buttons_to_remove = ['autoScale2d',
@@ -91,10 +90,11 @@ app.layout = dbc.Container([
                              # style={"background-color": "#aa2222", "color": "white",},
                              placeholder='Select a state', value='USA',
                              clearable=False),
-                html.Button('Reset Map', id='reset-button'),
             ], width=3),
-            # dbc.Col([
-            # ], width=2),
+        ], justify='center',),
+    dbc.Row(
+        [
+            html.Button('Reset Map', id='reset-button'),
         ], justify='center',),
 
     dbc.Row(
@@ -103,7 +103,9 @@ app.layout = dbc.Container([
                 [
                     dcc.Loading(
                         type="default",
-                        children=dcc.Graph(id='state-map',figure=fig_map,config={'displayModeBar': False}),
+                        children=dcc.Graph(id='state-map',
+                                           figure=make_counties_map(fd, counties_geo, states_meta_df),
+                                           config={'displayModeBar': False}),
                     ),
                 ], width='auto'),
             dbc.Col(
@@ -113,7 +115,7 @@ app.layout = dbc.Container([
                         children=[html.Div(id='county-graph'),
                         ]
                     ),
-                ], width=dict(size=4, order='last')
+                ], width='auto',#dict(size=4, order='last')
             )
         ], id='county-row', justify='center',
     ),
@@ -160,6 +162,7 @@ def map_click_or_county_selection(clickData, _n_clicks):
 def make_state_map(value):
     if value is None:
         value = 'USA'
+    fig_map = make_counties_map(fd, counties_geo, states_meta_df)
     return update_counties_map(deepcopy(fig_map), fd, states_meta_df, state=value)
 
 
