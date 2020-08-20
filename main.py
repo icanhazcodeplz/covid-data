@@ -9,7 +9,7 @@ from data_handling import *
 from visuals import *
 
 
-app = dash.Dash(external_stylesheets=[dbc.themes.CYBORG],
+app = dash.Dash(external_stylesheets=[dbc.themes.UNITED],
                 prevent_initial_callbacks=True)
 
 app.title = 'COVID-19 Hot Spots'
@@ -53,82 +53,72 @@ modebar_buttons_to_remove = ['autoScale2d',
 #### LAYOUT ###################################################################
 
 app.layout = dbc.Container([
-    dbc.Row(
-        [
-            dbc.Col([
-                # dcc.Markdown("## COVID-19 Hot Spots"),
-                html.H2("COVID-19 Hot Spots", style={'textAlign': 'center'}),
-            ],)# width={"size": 10, "offset": 0})
-        ],
-    ),
+    dbc.Row([
+        dbc.Col([
+            html.H1("COVID-19 Hot Spots", style={'textAlign': 'center'}),
+        ])
+    ]),
 
-    dbc.Row(
-        [
-            dbc.Col([
-                dcc.Graph(figure=make_state_map(fd, states_meta_df),
-                          id='usa-map',
-
-                          config={'scrollZoom': False,
-                                  'displayModeBar': False,
-                                  'doubleClick': False}) # TODO: Bug report, doubleClick = False does nothing
-                ], width='auto'),
-        ], justify='center',),
-
-    dbc.Row(
-        [
-            dbc.Col([
-                html.H6('Click on a state or select from the dropdown to see county-level data',
-                        style={'textAlign': 'center'}),
+    dbc.Row([
+        dbc.Col([
+            dbc.Card([
+                dbc.CardBody([
+                    dcc.Interval(id='interval-component',
+                                 interval=1*1000 * 60 * 60, # in milliseconds
+                                 n_intervals=0),
+                    dcc.Graph(figure=make_state_map(fd, states_meta_df),
+                              id='usa-map',
+                              config={'scrollZoom': False,
+                                      'displayModeBar': False,
+                                      'doubleClick': False}), # TODO: Bug report, doubleClick = False does nothing
+                    html.H6('Click on a state or select from the dropdown to see county-level data',
+                            style={'textAlign': 'center'}),
+                    dbc.Row([
+                        dbc.Col([
+                            dcc.Dropdown(id='state-dropdown',
+                                         options=state_keys,
+                                         placeholder='Select a state',
+                                         clearable=False),
+                        ], width=4),
+                    ], justify='center'),
                 ])
-        ]),
+            ], color='secondary')
+        ], width='auto'),
+    ], justify='center',),
 
-    dbc.Row(
-        [
-            dbc.Col([
-                dcc.Dropdown(id='state-dropdown',
-                             options=state_keys,
-                             # style={"background-color": "#aa2222", "color": "white",},
-                             placeholder='Select a state', value='USA',
-                             clearable=False),
-            ], width=3),
-        ], justify='center',),
-    dbc.Row(
-        [
-            html.Button('Reset Map', id='reset-button'),
-        ], justify='center',),
+    dbc.Row([
+        dbc.Card([
+            dbc.CardBody([
+                dbc.Row([
+                    html.H2(id='state-card-header')
+                ], justify='center'),
+                dbc.Row([
+                    dbc.Col([
+                        dcc.Loading([
+                            dcc.Graph(id='state-map',
+                                      figure=make_counties_map(fd,
+                                                  counties_geo,
+                                                  states_meta_df),
+                                      config={'displayModeBar': False}),
+                                ], type='default')
+                            ], width='auto'),
+                            dbc.Col([
+                                dcc.Loading([html.Div(id='county-graph')], type='default'),
+                            ], width='auto'),
+                        ], justify='center'),
+                    ]),
+        ], color='light'),
+    ], id='county-row', justify='center'),
 
-    dbc.Row(
-        [
-            dbc.Col(
-                [
-                    dcc.Loading(
-                        type="default",
-                        children=dcc.Graph(id='state-map',
-                                           figure=make_counties_map(fd, counties_geo, states_meta_df),
-                                           config={'displayModeBar': False}),
-                    ),
-                ], width='auto'),
-            dbc.Col(
-                [
-                    dcc.Loading(
-                        type='default',
-                        children=[html.Div(id='county-graph'),
-                        ]
-                    ),
-                ], width='auto',#dict(size=4, order='last')
-            )
-        ], id='county-row', justify='center',
-    ),
-    dbc.Row(
-        [
-            dcc.Markdown("""
+    dbc.Row([
+        dcc.Markdown("""
             Built with [Plotly Dash](https://plotly.com/dash/). Data from 
             [Johns Hopkins University](https://github.com/CSSEGISandData/COVID-19). 
             Source code at
             [Github](https://github.com/icanhazcodeplz/covid-data). Inspiration from 
              the [New York Times](https://www.nytimes.com/interactive/2020/us/coronavirus-us-cases.html).
-            """, ),
-        ], justify='center',)
+            """),
+    ], justify='center',)
 ], fluid=True)
 
 
@@ -142,11 +132,17 @@ def make_state_graph_dcc(state):
     return dcc.Graph(figure=fig, config={'displayModeBar': False})
 
 
+@app.callback(Output('usa-map', 'figure'),
+              [Input('interval-component', 'n_intervals')])
+def update_usa_graph(n):
+    return make_state_map(fd, states_meta_df)
+
+
 @app.callback(
     Output('state-dropdown', 'value'),
-    [Input('usa-map', 'clickData'),
-     Input('reset-button', 'n_clicks')], prevent_initial_call=False)
-def map_click_or_county_selection(clickData, _n_clicks):
+    [Input('usa-map', 'clickData')], #, Input('reset-button', 'n_clicks')],
+    prevent_initial_call=False)
+def map_click_or_county_selection(clickData): #, _n_clicks):
     ctx = dash.callback_context
     trigger = ctx.triggered[0]['prop_id'].split('.')[0]
     if trigger == 'usa-map':
@@ -157,13 +153,22 @@ def map_click_or_county_selection(clickData, _n_clicks):
 
 
 @app.callback(
+    Output('state-card-header', 'children'),
+    [Input('state-dropdown', 'value')])
+def update_state_card_header(value):
+    if value is None:
+        value = 'USA'
+    return value
+
+
+@app.callback(
     Output('state-map', 'figure'),
     [Input('state-dropdown', 'value')])
-def make_state_map(value):
+def update_state_map(value):
     if value is None:
         value = 'USA'
     fig_map = make_counties_map(fd, counties_geo, states_meta_df)
-    return update_counties_map(deepcopy(fig_map), fd, states_meta_df, state=value)
+    return update_counties_map(fig_map, fd, states_meta_df, state=value)
 
 
 @app.callback(
