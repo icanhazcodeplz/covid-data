@@ -66,7 +66,7 @@ app.layout = dbc.Container([
                     dcc.Interval(id='interval-component',
                                  interval=1*1000 * 60 * 60, # in milliseconds
                                  n_intervals=0),
-                    dcc.Graph(figure=make_state_map(fd, states_meta_df),
+                    dcc.Graph(figure=make_states_map(fd, states_meta_df),
                               id='usa-map',
                               config={'scrollZoom': False,
                                       'displayModeBar': False,
@@ -98,7 +98,7 @@ app.layout = dbc.Container([
                             dcc.Graph(id='state-map',
                                       figure=make_counties_map(fd,
                                                   counties_geo,
-                                                  states_meta_df),
+                                                  states_meta_df, state='USA'),
                                       config={'displayModeBar': False}),
                                 ], type='default')
                             ], width='auto'),
@@ -135,7 +135,7 @@ def make_state_graph_dcc(state):
 @app.callback(Output('usa-map', 'figure'),
               [Input('interval-component', 'n_intervals')])
 def update_usa_graph(n):
-    return make_state_map(fd, states_meta_df)
+    return make_states_map(fd, states_meta_df)
 
 
 @app.callback(
@@ -167,8 +167,7 @@ def update_state_card_header(value):
 def update_state_map(value):
     if value is None:
         value = 'USA'
-    fig_map = make_counties_map(fd, counties_geo, states_meta_df)
-    return update_counties_map(fig_map, fd, states_meta_df, state=value)
+    return make_counties_map(fd, counties_geo, states_meta_df, state=value)
 
 
 @app.callback(

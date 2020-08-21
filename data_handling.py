@@ -192,7 +192,9 @@ def cases_data_for_graph(cases, pop):
 
 
 def load_states_csv():
-    return pd.read_csv('{}/states.csv'.format(DATA_DIR), index_col=0)
+    return pd.read_csv('{}/states.csv'.format(DATA_DIR),
+                       index_col=0,
+                       dtype=dict(fips=str))
 
 
 class FreshData:
@@ -224,11 +226,16 @@ class FreshData:
 
 
 if __name__ == '__main__':
-    get_and_save_data('')
+    df = load_states_csv()
+    d = FreshData().fips_county_dict
+    new = {}
+    for k, v in d.items():
+        new[v.split(', ')[1]] = k[:2]
+        print()
+    print()
+    # get_and_save_data('')
 
     print()
-    # load_states_csv()
-    # fd = FreshData()
     print()
 
 

@@ -2,22 +2,19 @@ import pandas as pd
 from plotly.subplots import make_subplots
 import plotly.graph_objects as go
 import numpy as np
-from datetime import timedelta
-import cufflinks as cf
+from datetime import datetime, timedelta
 import json
 from copy import deepcopy
 
 from data_handling import *
 
-COUNTIES_MAP_W = 650
-FULL_MAP_STYLE = 'outdoors'
 Z_MAX = 50
 COLORBAR = dict(x=1, #outlinecolor='#A10C0C', bordercolor='#A10C0C',
                 title=dict(text='Average<br>Daily<br>Cases<br>per 100k',
                            font=dict(size=14, color='#A10C0C')),
                 )
 
-def make_state_map(fd, states_meta_df):
+def make_states_map(fd, states_meta_df):
     fd.refresh_if_needed()
     # FIXME: This logic should be done somewhere else!
     df = fd.state_map_df
@@ -37,26 +34,46 @@ def make_state_map(fd, states_meta_df):
         colorbar=COLORBAR,
     ))
 
+    now = datetime.now() - timedelta(hours=7)
+    now = now.strftime('%m/%d/%y at %H:%M:%S')
     fig.update_layout(
-        # title_text='2011 US Agriculture Exports by State',
         margin=dict(l=3, r=3, b=3, t=0, pad=0),
         geo_scope='usa',
         width=650,
-        height=320
-    )
+        height=320,
+        annotations=[dict(
+            x=0.0,
+            y=0.0,
+            xref='paper',
+            yref='paper',
+            text='Refreshed {}'.format(now),
+            showarrow=False
+        )]
 
+    )
     return fig
 
 
-def make_counties_map(fd, counties_geo, states_meta_df):
+def make_counties_map(fd, counties_geo, states_meta_df, fips=None, state=None):
     fd.refresh_if_needed()
     df = fd.county_map_df
-    state = 'USA'
+
+    if not fips and not state:
+        state = 'USA'
+    elif fips:
+        state = df[df['FIPS'] == fips]['state'].values[0]
+
+    geo = deepcopy(counties_geo)
+    if state != 'USA':
+        df = df[df['state'] == state]
+        state_num = states_meta_df.loc[state, 'fips']
+        l = [f for f in counties_geo['features'] if f['properties']['STATE'] == state_num]
+        geo['features'] = l
 
     fig = go.Figure(
         go.Choroplethmapbox(
             colorbar=COLORBAR,
-            geojson=counties_geo,
+            geojson=geo,
             locations=df['FIPS'],
             z=df['ave_rate'],
             customdata=df['state'],
@@ -71,46 +88,15 @@ def make_counties_map(fd, counties_geo, states_meta_df):
 
     fig.update_layout(
         mapbox_accesstoken=open(".mapbox_token").read(),  # you will need your own token,
-        mapbox_style=FULL_MAP_STYLE,
-        width=COUNTIES_MAP_W,
+        mapbox_style='light',
+        width=650,
         height=500,
         margin=dict(l=3, r=3, b=3, t=3, pad=10),
         mapbox_zoom=states_meta_df.loc[state, 'zoom'],
         mapbox_center=dict(lat=states_meta_df.loc[state, 'lat'],
                            lon=states_meta_df.loc[state, 'lon']),
     )
-    return fig
 
-
-def update_counties_map(fig, fd, states_meta_df, fips=None, state=None):
-    if not fips and not state:
-        raise Exception('Must provide one of "state" or "fips"')
-    current_state = fig.data[0].meta
-    df = fd.county_map_df
-    if fips:
-        state = df[df['FIPS'] == fips]['state'].values[0]
-    df = df[df['state'] == state]
-    width = COUNTIES_MAP_W
-    style = 'light'
-
-    if current_state == state:
-        return fig
-
-    # TODO: File bug report about plotly_restyle not changing type to numpy automatically
-    fig.plotly_restyle(dict(locations=df['FIPS'].to_numpy(),
-                            z=df['ave_rate'].to_numpy(),
-                            customdata=df['state'].to_numpy(),
-                            text=df['text'].to_numpy(),
-                            meta=state
-                            )
-                       )
-    fig.update_layout(mapbox_zoom=states_meta_df.loc[state, 'zoom'],
-                      mapbox_center={'lat': states_meta_df.loc[state, 'lat'],
-                                     'lon': states_meta_df.loc[state, 'lon']},
-                      width=width,
-                      height=500,
-                      mapbox_style=style
-                      )
     return fig
 
 
@@ -182,7 +168,6 @@ def make_cases_subplots(fd, state, county_fips=None):
         else:
             fig = make_cases_graph(fig, county_df, row=2, col=1)
 
-
     title_annotations = [
         dict(x=0.5, y=1.08, showarrow=False, xref='paper', yref='paper', yanchor='top', xanchor='center',
              text='<b>{}</b>'.format(state), font={'size': 18}
@@ -234,6 +219,7 @@ def make_cases_subplots(fd, state, county_fips=None):
                 ]),
             )
         ])
+
     fig.update_layout(width=500,
                       height=500,
                       showlegend=False,
@@ -245,19 +231,36 @@ def make_cases_subplots(fd, state, county_fips=None):
 if __name__ == '__main__':
     fd = FreshData()
     states_meta = load_states_csv()
-    # make_state_map(fd, states_meta)
+    with open('data/geojson-counties-fips.json') as f:
+        counties_geo = json.load(f)
 
 
-    state='New York'
-    fips = '53047'
-    # fips = None
-    f = make_cases_subplots(fd, state, county_fips=fips)
-    f.show()
+    fig = make_counties_map(fd, counties_geo, states_meta, fips=None, state='Alabama')
+    fig.show()
+
+
+    # s = datetime.now()
+    # for i in range(10):
+    #     full_map = make_counties_map(fd, counties_geo, states_meta)
+    # e = datetime.now()
+    # print(e - s)
+    #
+    # state_geo = DataHandler().load_pkl_file('AL_geo')
+    # s = datetime.now()
+    # for i in range(10):
+    #     state_map = make_counties_map(fd, state_geo, states_meta)
+    # e = datetime.now()
+    # print(e - s)
+
+    # fig = make_state_map(fd, states_meta)
+    # fig.show()
+    # state='New York'
+    # fips = '53047'
+    # # fips = None
+    # f = make_cases_subplots(fd, state, county_fips=fips)
+    # f.show()
     print()
 
-    # with open('data/geojson-counties-fips.json') as f:
-    #     counties = json.load(f)
-    # fd = FreshData()
     # states_df = load_states_csv()
     # fips = '53047'
     # fips2 = '02290'
