@@ -22,8 +22,6 @@ fd = FreshData()
 states_meta_df = load_states_csv()
 state_keys = [dict(value=s, label=s) for s in states_meta_df.index]
 
-# FIXME: will fig_map update when the data refreshes???
-
 # FIXME: Not all of these are actually removed! Might be plotly bug
 modebar_buttons_to_remove = ['autoScale2d',
                              'hoverCompareCartesian',
@@ -64,7 +62,7 @@ app.layout = dbc.Container([
             dbc.Card([
                 dbc.CardBody([
                     dcc.Interval(id='interval-component',
-                                 interval=1*1000 * 60 * 60, # in milliseconds
+                                 interval=1*1000 * 10, # in milliseconds
                                  n_intervals=0),
                     dcc.Graph(figure=make_states_map(fd, states_meta_df),
                               id='usa-map',
@@ -90,7 +88,7 @@ app.layout = dbc.Container([
         dbc.Card([
             dbc.CardBody([
                 dbc.Row([
-                    html.H2(id='state-card-header')
+                    dcc.Loading([html.H2(id='state-card-header')], type='default'),
                 ], justify='center'),
                 dbc.Row([
                     dbc.Col([
@@ -122,16 +120,6 @@ app.layout = dbc.Container([
 ], fluid=True)
 
 
-def make_state_graph_dcc(state):
-    if state is None:
-        return ''
-    fd.refresh_if_needed()
-    state_pop = fd.state_pop_dict[state]
-    state_df = cases_data_for_graph(fd.state_df[state], state_pop)
-    fig = make_cases_graph(state_df, state)
-    return dcc.Graph(figure=fig, config={'displayModeBar': False})
-
-
 @app.callback(Output('usa-map', 'figure'),
               [Input('interval-component', 'n_intervals')])
 def update_usa_graph(n):
@@ -140,9 +128,9 @@ def update_usa_graph(n):
 
 @app.callback(
     Output('state-dropdown', 'value'),
-    [Input('usa-map', 'clickData')], #, Input('reset-button', 'n_clicks')],
+    [Input('usa-map', 'clickData')],
     prevent_initial_call=False)
-def map_click_or_county_selection(clickData): #, _n_clicks):
+def map_click_or_county_selection(clickData):
     ctx = dash.callback_context
     trigger = ctx.triggered[0]['prop_id'].split('.')[0]
     if trigger == 'usa-map':
