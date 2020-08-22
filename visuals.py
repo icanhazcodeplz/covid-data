@@ -9,7 +9,7 @@ from copy import deepcopy
 from data_handling import *
 
 Z_MAX = 50
-COLORBAR = dict(x=1, #outlinecolor='#A10C0C', bordercolor='#A10C0C',
+COLORBAR = dict(x=1,
                 title=dict(text='Average<br>Daily<br>Cases<br>per 100k',
                            font=dict(size=14, color='#A10C0C')),
                 )
@@ -109,6 +109,9 @@ def make_cases_graph(fig, df, row=1, col=1):
     new_i = df.index[-1] + timedelta(days=1)
     df.loc[new_i] = [np.nan] * len(df.columns)
 
+    # Once every fortnight we have this problem
+    if days_back_to_start > len(df):
+        days_back_to_start -= 14
 
     fig.add_trace(go.Bar(
         x=list(df.index), y=list(df['cases_rate']), name='Cases Per 100k',
@@ -231,26 +234,15 @@ def make_cases_subplots(fd, state, county_fips=None):
 if __name__ == '__main__':
     fd = FreshData()
     states_meta = load_states_csv()
-    with open('data/geojson-counties-fips.json') as f:
-        counties_geo = json.load(f)
 
-
-    fig = make_counties_map(fd, counties_geo, states_meta, fips=None, state='Alabama')
+    fig = make_cases_subplots(fd, 'USA')
     fig.show()
 
+    # with open('data/geojson-counties-fips.json') as f:
+    #     counties_geo = json.load(f)
+    # fig = make_counties_map(fd, counties_geo, states_meta, fips=None, state='Alabama')
+    # fig.show()
 
-    # s = datetime.now()
-    # for i in range(10):
-    #     full_map = make_counties_map(fd, counties_geo, states_meta)
-    # e = datetime.now()
-    # print(e - s)
-    #
-    # state_geo = DataHandler().load_pkl_file('AL_geo')
-    # s = datetime.now()
-    # for i in range(10):
-    #     state_map = make_counties_map(fd, state_geo, states_meta)
-    # e = datetime.now()
-    # print(e - s)
 
     # fig = make_state_map(fd, states_meta)
     # fig.show()
