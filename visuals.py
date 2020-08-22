@@ -5,6 +5,7 @@ import numpy as np
 from datetime import datetime, timedelta
 import json
 from copy import deepcopy
+import math
 
 from data_handling import *
 
@@ -14,6 +15,20 @@ COLORBAR = dict(x=1,
                            font=dict(size=14, color='#A10C0C')),
                 )
 
+def make_usa_card_text(fd):
+    fd.refresh_if_needed()
+    yest = fd.state_df['USA'][-1]
+    week_ago = fd.state_df['USA'][-8]
+    week_change = round(((yest - week_ago) / week_ago * 100), 0)
+    # FIXME: Use a different format to make the table?
+    txt = """
+    | New Cases Yesterday |&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | One Week Change |
+    |:-------------------:|-|:---------------:|
+    | {}                  | |            {}%  |
+    """.format(int(yest), int(week_change))
+    return txt
+
+
 def make_states_map(fd, states_meta_df):
     fd.refresh_if_needed()
     # FIXME: This logic should be done somewhere else!
@@ -22,7 +37,7 @@ def make_states_map(fd, states_meta_df):
     df = df.join(states_meta_df['abbr'])
 
     fig = go.Figure(data=go.Choropleth(
-        locationmode='USA-states',  # set of locations match entries in `locations`
+        locationmode='USA-states',
         locations=df['abbr'],
         z=df['ave_rate'].astype(float),  # Data to be color-coded
         customdata=df.index.to_list(),
@@ -34,8 +49,7 @@ def make_states_map(fd, states_meta_df):
         colorbar=COLORBAR,
     ))
 
-    now = datetime.now() - timedelta(hours=7)
-    now = now.strftime('%m/%d/%y at %H:%M:%S')
+    yesterday = (datetime.now() - timedelta(days=1)).strftime('%m/%d/%y')
     fig.update_layout(
         margin=dict(l=3, r=3, b=3, t=0, pad=0),
         geo_scope='usa',
@@ -46,7 +60,7 @@ def make_states_map(fd, states_meta_df):
             y=0.0,
             xref='paper',
             yref='paper',
-            text='Refreshed {}'.format(now),
+            text='As of {}'.format(yesterday),
             showarrow=False
         )]
 
@@ -89,7 +103,7 @@ def make_counties_map(fd, counties_geo, states_meta_df, fips=None, state=None):
     fig.update_layout(
         mapbox_accesstoken=open(".mapbox_token").read(),  # you will need your own token,
         mapbox_style='light',
-        width=650,
+        width=635,
         height=500,
         margin=dict(l=3, r=3, b=3, t=3, pad=10),
         mapbox_zoom=states_meta_df.loc[state, 'zoom'],
@@ -100,7 +114,7 @@ def make_counties_map(fd, counties_geo, states_meta_df, fips=None, state=None):
     return fig
 
 
-def make_cases_graph(fig, df, row=1, col=1):
+def make_cases_graph(fig, df, row=1, col=1, only_total_cases=False):
     df = df.round(1)
     ### find first tick spot
     total_days = len(df)
@@ -113,31 +127,32 @@ def make_cases_graph(fig, df, row=1, col=1):
     if days_back_to_start > len(df):
         days_back_to_start -= 14
 
-    fig.add_trace(go.Bar(
-        x=list(df.index), y=list(df['cases_rate']), name='Cases Per 100k',
-        marker=dict(color='red'), opacity=0.5),
-        row=row, col=col
-    )
-    fig.add_trace(go.Scatter(
-        x=list(df.index), y=list(df['cases_ave_rate']), name='7 Day Average.', line=dict(color='red')),
-        row=row, col=col
-    )
-    fig.add_trace(go.Scatter(
-        x=list(df.index), y=[50]*len(df), line=dict(color='rgba(0, 0, 0, 0.5)', dash='dash'),
-        hoverinfo='skip'),
-        row=row, col=col
-    )
+    if not only_total_cases:
+        fig.add_trace(go.Bar(
+            x=list(df.index), y=list(df['cases_rate']), name='Cases Per 100k',
+            marker=dict(color='red'), opacity=0.5),
+            row=row, col=col
+        )
+        fig.add_trace(go.Scatter(
+            x=list(df.index), y=list(df['cases_ave_rate']), name='7 Day Average.', line=dict(color='red')),
+            row=row, col=col
+        )
+        fig.add_trace(go.Scatter(
+            x=list(df.index), y=[50]*len(df), line=dict(color='rgba(0, 0, 0, 0.5)', dash='dash'),
+            hoverinfo='skip'),
+            row=row, col=col
+        )
 
     fig.add_trace(go.Bar(
         x=list(df.index), y=list(df['cases']), name='Cases',
         marker=dict(color='red'), opacity=0.5,
-        visible=False),
+        visible=only_total_cases),
         row=row, col=col
     )
     fig.add_trace(go.Scatter(
         x=list(df.index), y=list(df['cases_ave']), name='7 Day Average',
         line=dict(color='red'),
-        visible=False),
+        visible=only_total_cases),
         row=row, col=col
     )
 
@@ -180,24 +195,34 @@ def make_cases_subplots(fd, state, county_fips=None):
              )
     ]
 
+    fig.update_layout(annotations=title_annotations)
+
+    fig = _add_buttons_and_annotations(fig, state_df)
+    return fig
+
+
+def _add_buttons_and_annotations(fig, state_df, width=425, height=500):
     x_loc = 20
     x_loc50 = 11
     if state_df['cases_ave_rate'].max() < 45:
         ay = 25
     else:
         ay = -25
-    cases_rate_annotations = [
+    cases_rate_annotations = tuple([
         dict(x=state_df.index[x_loc50], y=50,
              xref='x1', yref='y1', text='50 Cases<br>per 100k', ax=0, ay=ay),
         dict(x=state_df.index[x_loc], y=state_df['cases_ave_rate'].iloc[x_loc],
              xref='x1', yref='y1', text='7 Day Average', ax=0, ay=-25,
              ),
-    ]
-    cases_annotations = [dict(x=state_df.index[x_loc], y=state_df['cases_ave'].iloc[x_loc],
+    ])
+    cases_annotations = tuple([
+        dict(x=state_df.index[x_loc], y=state_df['cases_ave'].iloc[x_loc],
                              xref="x", yref="y", text='7 Day Average',
-                             ax=0, ay=-25)]
+                             ax=0, ay=-25)
+    ])
 
-    fig.update_layout(annotations=title_annotations + cases_rate_annotations)
+    initial_annotations = fig.layout.annotations
+    fig.layout.annotations = initial_annotations + cases_rate_annotations
 
     fig.update_layout(
         updatemenus=[
@@ -214,20 +239,44 @@ def make_cases_subplots(fd, state, county_fips=None):
                     dict(label='New Cases per 100k',
                          method="update",
                          args=[{"visible": [True, True, True, False, False]},
-                               {"annotations": title_annotations + cases_rate_annotations}]),
+                               {"annotations": initial_annotations + cases_rate_annotations}]),
                     dict(label='New Cases',
                          method="update",
                          args=[{"visible": [False, False, False, True, True]},
-                               {"annotations": title_annotations + cases_annotations}]),
+                               {"annotations": initial_annotations + cases_annotations}]),
                 ]),
             )
         ])
 
-    fig.update_layout(width=500,
-                      height=500,
+    fig.update_layout(width=width,
+                      height=height,
                       showlegend=False,
                       margin=dict(l=5, r=5, b=5, t=5, pad=1),
-                      hovermode='x unified',)
+                      hovermode='x unified')
+    return fig
+
+
+def make_usa_graph(fd):
+    fd.refresh_if_needed()
+    fig = make_subplots()
+    state = 'USA'
+    pop = fd.state_pop_dict[state]
+    df = cases_data_for_graph(fd.state_df[state], pop)
+    fig = make_cases_graph(fig, df, row=1, col=1, only_total_cases=True)
+
+    x_loc = 30
+    cases_annotations = [
+        dict(x=df.index[x_loc], y=df['cases_ave'].iloc[x_loc],
+             xref="x", yref="y", text='7 Day Average',
+             ax=0, ay=-25),
+    ]
+
+    fig.update_layout(width=400,
+                      height=200,
+                      showlegend=False,
+                      margin=dict(l=5, r=5, b=5, t=5, pad=1),
+                      hovermode='x unified',
+                      annotations=cases_annotations)
     return fig
 
 

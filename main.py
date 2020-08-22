@@ -21,6 +21,9 @@ with open('{}/geojson-counties-fips.json'.format(DATA_DIR)) as f:
 fd = FreshData()
 states_meta_df = load_states_csv()
 state_keys = [dict(value=s, label=s) for s in states_meta_df.index]
+config = {'scrollZoom': False,
+          'displayModeBar': False,
+          'doubleClick': False} # TODO: Bug report, doubleClick = False does nothing
 
 # FIXME: Not all of these are actually removed! Might be plotly bug
 modebar_buttons_to_remove = ['autoScale2d',
@@ -64,20 +67,29 @@ app.layout = dbc.Container([
                     dcc.Interval(id='interval-component',
                                  interval=1*1000 * 10, # in milliseconds
                                  n_intervals=0),
-                    dcc.Graph(figure=make_states_map(fd, states_meta_df),
-                              id='usa-map',
-                              config={'scrollZoom': False,
-                                      'displayModeBar': False,
-                                      'doubleClick': False}), # TODO: Bug report, doubleClick = False does nothing
-                    html.H6('Click on a state or select from the dropdown to see county-level data',
-                            style={'textAlign': 'center'}),
                     dbc.Row([
-                        dbc.Col([
-                            dcc.Dropdown(id='state-dropdown',
-                                         options=state_keys,
-                                         placeholder='Select a state',
-                                         clearable=False),
-                        ], width=4),
+                        dbc.Card([
+                            html.H3('USA', style={'textAlign': 'center'}),
+                            dbc.CardBody([
+                                dbc.Card([
+                                    dbc.CardBody([
+                                        dcc.Markdown(make_usa_card_text(fd)),
+                                    ]),
+                                ], color='primary', inverse=True),
+                                dcc.Graph(figure=make_usa_graph(fd),
+                                          id='usa-graph',
+                                          config=config),
+                            ]),
+                        ], color='light', inverse=False),
+                        dbc.Card([
+                            dbc.CardBody([
+                                dcc.Graph(figure=make_states_map(fd, states_meta_df),
+                                          id='usa-map',
+                                          config=config),
+                                html.H6('Click on a state or select from the dropdown to see county-level data',
+                                        style={'textAlign': 'center'}),
+                            ])
+                        ], color='light', inverse=False),
                     ], justify='center'),
                 ])
             ], color='secondary')
@@ -88,24 +100,34 @@ app.layout = dbc.Container([
         dbc.Card([
             dbc.CardBody([
                 dbc.Row([
-                    dcc.Loading([html.H2(id='state-card-header')], type='default'),
+                    dbc.Col([
+                        dcc.Dropdown(id='state-dropdown',
+                                     options=state_keys,
+                                     placeholder='Select a state',
+                                     clearable=False),
+                    ], width=3),
                 ], justify='center'),
                 dbc.Row([
-                    dbc.Col([
-                        dcc.Loading([
-                            dcc.Graph(id='state-map',
-                                      figure=make_counties_map(fd,
-                                                  counties_geo,
-                                                  states_meta_df, state='USA'),
-                                      config={'displayModeBar': False}),
-                                ], type='default')
-                            ], width='auto'),
-                            dbc.Col([
-                                dcc.Loading([html.Div(id='county-graph')], type='default'),
-                            ], width='auto'),
-                        ], justify='center'),
-                    ]),
-        ], color='light'),
+                    dbc.Card([
+                        dbc.CardBody([
+                            dbc.Row([
+
+                                dbc.Col([
+                                    dcc.Loading([
+                                        dcc.Graph(id='state-map',
+                                                  figure=make_counties_map(fd, counties_geo, states_meta_df, state='USA'),
+                                                  config={'displayModeBar': False}),
+                                            ], type='default')
+                                    ], width='auto'),
+                                dbc.Col([
+                                        dcc.Loading([html.Div(id='county-graph')], type='default'),
+                                ], width='auto'),
+                            ], justify='center'),
+                        ]),
+                    ], color='light'),
+                ], justify='center'),
+            ]),
+        ], color='secondary'),
     ], id='county-row', justify='center'),
 
     dbc.Row([
@@ -140,13 +162,13 @@ def map_click_or_county_selection(clickData):
     return state
 
 
-@app.callback(
-    Output('state-card-header', 'children'),
-    [Input('state-dropdown', 'value')])
-def update_state_card_header(value):
-    if value is None:
-        value = 'USA'
-    return value
+# @app.callback(
+#     Output('state-card-header', 'children'),
+#     [Input('state-dropdown', 'value')])
+# def update_state_card_header(value):
+#     if value is None:
+#         value = 'USA'
+#     return value
 
 
 @app.callback(
