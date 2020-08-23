@@ -63,36 +63,31 @@ app.layout = dbc.Container([
     dbc.Row([
         dbc.Col([
             dbc.Card([
-                dbc.CardBody([
-                    dcc.Interval(id='interval-component',
-                                 interval=1*1000 * 10, # in milliseconds
-                                 n_intervals=0),
-                    dbc.Row([
-                        dbc.Card([
-                            html.H3('USA', style={'textAlign': 'center'}),
-                            dbc.CardBody([
-                                dbc.Card([
-                                    dbc.CardBody([
-                                        dcc.Markdown(make_usa_card_text(fd)),
-                                    ]),
-                                ], color='primary', inverse=True),
-                                dcc.Graph(figure=make_usa_graph(fd),
-                                          id='usa-graph',
-                                          config=config),
-                            ]),
-                        ], color='light', inverse=False),
-                        dbc.Card([
-                            dbc.CardBody([
-                                dcc.Graph(figure=make_states_map(fd, states_meta_df),
-                                          id='usa-map',
-                                          config=config),
-                                html.H6('Click on a state or select from the dropdown to see county-level data',
-                                        style={'textAlign': 'center'}),
-                            ])
-                        ], color='light', inverse=False),
-                    ], justify='center'),
-                ])
-            ], color='secondary')
+                dcc.Interval(id='interval-component',
+                             interval=1*1000 * 60 * 60,  # in milliseconds
+                             n_intervals=0),
+                dbc.Row([
+                    dbc.Card([
+                        html.H4('USA', style={'textAlign': 'center'}),
+                        dbc.Table(make_usa_card_text(fd),
+                                  bordered=True,
+                                  dark=False,
+                                  striped=True,
+                                  id='usa-card',
+                                  className='table-primary'),
+                        dcc.Graph(figure=make_usa_graph(fd),
+                                  id='usa-graph',
+                                  config=config),
+                    ], color='light', inverse=False, body=True),
+                    dbc.Card([
+                        dcc.Graph(figure=make_states_map(fd, states_meta_df),
+                                  id='usa-map',
+                                  config=config),
+                        html.H6('Click on a state or select from the dropdown to see county-level data',
+                                style={'textAlign': 'center'}),
+                    ], color='light', inverse=False, body=True),
+                ], justify='center'),
+            ], color='secondary', body=True)
         ], width='auto'),
     ], justify='center',),
 
@@ -104,14 +99,16 @@ app.layout = dbc.Container([
                         dcc.Dropdown(id='state-dropdown',
                                      options=state_keys,
                                      placeholder='Select a state',
-                                     clearable=False),
+                                     clearable=False,
+                                     style= {"width": "180px",
+                                             # "font-family": "sans-serif",
+                                             "font-size": "large",}),
                     ], width=3),
                 ], justify='center'),
                 dbc.Row([
                     dbc.Card([
                         dbc.CardBody([
                             dbc.Row([
-
                                 dbc.Col([
                                     dcc.Loading([
                                         dcc.Graph(id='state-map',
@@ -142,10 +139,15 @@ app.layout = dbc.Container([
 ], fluid=True)
 
 
-@app.callback(Output('usa-map', 'figure'),
-              [Input('interval-component', 'n_intervals')])
-def update_usa_graph(n):
-    return make_states_map(fd, states_meta_df)
+@app.callback([Output('usa-card', 'children'),
+               Output('usa-graph', 'figure'),
+               Output('usa-map', 'figure')],
+              [Input('interval-component', 'n_intervals')],
+              prevent_initial_call=False)
+def update_usa_data(_):
+    return (make_usa_card_text(fd),
+            make_usa_graph(fd),
+            make_states_map(fd, states_meta_df))
 
 
 @app.callback(
@@ -160,15 +162,6 @@ def map_click_or_county_selection(clickData):
     else:
         state = 'USA'
     return state
-
-
-# @app.callback(
-#     Output('state-card-header', 'children'),
-#     [Input('state-dropdown', 'value')])
-# def update_state_card_header(value):
-#     if value is None:
-#         value = 'USA'
-#     return value
 
 
 @app.callback(
@@ -199,7 +192,12 @@ def make_county_display(value, clickData):
 
 if __name__ == '__main__':
     app.run_server(debug=True, port=8080)
-
+"""
+TODO:
+- Remove extra info on hover for graphs
+- Use separate card for bottom state section
+- Is values are above 10, remove digits
+"""
 
 
 """" Ideas

@@ -179,11 +179,11 @@ def county_series(df, county_key):
     return county_s['cases']
 
 
-def cases_data_for_graph(cases, pop):
-    if cases.sum() == 0:
+def cases_data_for_graph(cases_s, pop):
+    if cases_s.sum() == 0:
         return None
 
-    df = cases.to_frame('cases')
+    df = cases_s.to_frame('cases')
     df['cases_rate'] = df['cases'] / pop * 100000
 
     df['cases_ave'] = df['cases'].rolling(7, ).mean()

@@ -3,30 +3,50 @@ from plotly.subplots import make_subplots
 import plotly.graph_objects as go
 import numpy as np
 from datetime import datetime, timedelta
+import dash_html_components as html
+import dash_core_components as dcc
+
 import json
 from copy import deepcopy
-import math
 
 from data_handling import *
 
 Z_MAX = 50
 COLORBAR = dict(x=1,
                 title=dict(text='Average<br>Daily<br>Cases<br>per 100k',
-                           font=dict(size=14, color='#A10C0C')),
-                )
+                           font=dict(size=14, color='#A10C0C')),)
+
 
 def make_usa_card_text(fd):
     fd.refresh_if_needed()
-    yest = fd.state_df['USA'][-1]
-    week_ago = fd.state_df['USA'][-8]
-    week_change = round(((yest - week_ago) / week_ago * 100), 0)
-    # FIXME: Use a different format to make the table?
-    txt = """
-    | New Cases Yesterday |&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | One Week Change |
-    |:-------------------:|-|:---------------:|
-    | {}                  | |            {}%  |
-    """.format(int(yest), int(week_change))
-    return txt
+    s = fd.state_df['USA']
+    df = cases_data_for_graph(s, fd.state_pop_dict['USA'])
+    yest = df['cases'][-1]
+    yest_date_str = df.index[-1].strftime('%b %-d')
+    ave = df['cases_ave'][-1]
+    ave_week_ago = df['cases_ave'][-8]
+    ave_two_week_ago = df['cases_ave'][-15]
+
+    week_change = round(((ave - ave_week_ago) / ave_week_ago * 100), 0)
+    two_week_change = round(((ave - ave_two_week_ago) / ave_two_week_ago * 100), 0)
+
+    table_header = [
+        html.Thead(html.Tr([
+            html.Th(dcc.Markdown('New Cases  \n {}'.format(yest_date_str))),
+            html.Th(dcc.Markdown('7-Day  \n Trend')),
+            html.Th(dcc.Markdown('14-Day  \n Trend')),
+        ]))
+    ]
+
+    table_body = [
+        html.Tbody([html.Tr([
+            html.Td('{:,.0f}'.format(int(yest))),
+            html.Td('{}%'.format(int(week_change))),
+            html.Td('{}%'.format(int(two_week_change))),
+        ])])
+    ]
+
+    return table_header + table_body
 
 
 def make_states_map(fd, states_meta_df):
@@ -49,7 +69,7 @@ def make_states_map(fd, states_meta_df):
         colorbar=COLORBAR,
     ))
 
-    yesterday = (datetime.now() - timedelta(days=1)).strftime('%m/%d/%y')
+    last_day_of_data = fd.county_df.index[-1].strftime('%b %-d')
     fig.update_layout(
         margin=dict(l=3, r=3, b=3, t=0, pad=0),
         geo_scope='usa',
@@ -60,7 +80,7 @@ def make_states_map(fd, states_meta_df):
             y=0.0,
             xref='paper',
             yref='paper',
-            text='As of {}'.format(yesterday),
+            text='As of {}'.format(last_day_of_data),
             showarrow=False
         )]
 
