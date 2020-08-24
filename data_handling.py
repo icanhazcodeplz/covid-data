@@ -4,6 +4,7 @@ from google.cloud import storage
 import pickle
 from io import BytesIO, StringIO
 from datetime import datetime
+import json
 
 from constants import *
 
@@ -67,18 +68,26 @@ class DataHandler:
         pd.to_pickle(thing, file)
         print('saved "{}"'.format(file)) if LOG_LEVEL > 0 else None
 
-    def load_pkl_file(self, file_prefix):
+    @staticmethod
+    def load_pkl_file(file_prefix):
         #TODO: Make this class or static method?
         if USE_LOCAL_DIR:
-            return self._read_local_pkl(file_prefix)
+            return DataHandler()._read_local_pkl(file_prefix)
         else:
-            return self._download_pkl_blob_as_df(file_prefix)
+            return DataHandler()._download_pkl_blob_as_df(file_prefix)
 
-    def save_pkl_file(self, obj, file_prefix):
+    @staticmethod
+    def save_pkl_file(obj, file_prefix):
         if USE_LOCAL_DIR:
-            return self._save_local_pkl(obj, file_prefix)
+            return DataHandler()._save_local_pkl(obj, file_prefix)
         else:
-            return self._upload_df_as_pkl_blob(obj, file_prefix)
+            return DataHandler()._upload_df_as_pkl_blob(obj, file_prefix)
+
+    @staticmethod
+    def load_states_csv():
+        return pd.read_csv('{}/states.csv'.format(DATA_DIR),
+                           index_col=0,
+                           dtype=dict(fips=str))
 
 
 def process_for_county_level(df):
@@ -120,8 +129,11 @@ def get_and_save_data(_):
     # FIXME: This is some ugly code. Clean it up!!!
     uid_pop = tot_deaths_df[['UID', 'Population']].set_index('UID',drop=True)
     state_cases_df = tot_cases_df.join(uid_pop, on='UID')
-    state_cases_df = state_cases_df.drop(['UID', 'iso2', 'iso3', 'code3', 'FIPS', 'Admin2', 'Country_Region', 'Lat', 'Long_', 'Combined_Key'], axis='columns')
-    state_cases_df = state_cases_df.rename({'Province_State': 'state'}, axis='columns')
+    state_cases_df = state_cases_df.drop(
+        ['UID', 'iso2', 'iso3', 'code3', 'FIPS', 'Admin2', 'Country_Region',
+         'Lat', 'Long_', 'Combined_Key'], axis='columns')
+    state_cases_df = state_cases_df.rename({'Province_State': 'state'},
+                                           axis='columns')
     state_cases_df = state_cases_df.groupby(['state']).sum()
     state_cases_df = state_cases_df.drop(
         ['Diamond Princess', 'Guam', 'American Samoa', 'Grand Princess',
@@ -172,13 +184,13 @@ def get_and_save_data(_):
             custom_number_str(tup.ave_rate)
         ) for tup in state_map_df.itertuples()]
 
-    DataHandler().save_pkl_file(county_map_df, 'county_map_df')
-    DataHandler().save_pkl_file(county_df, 'county_df')
-    DataHandler().save_pkl_file(county_meta_df, 'county_meta_df')
+    DataHandler.save_pkl_file(county_map_df, 'county_map_df')
+    DataHandler.save_pkl_file(county_df, 'county_df')
+    DataHandler.save_pkl_file(county_meta_df, 'county_meta_df')
 
-    DataHandler().save_pkl_file(state_pop_dict, 'state_pop_dict')
-    DataHandler().save_pkl_file(state_df, 'state_df')
-    DataHandler().save_pkl_file(state_map_df, 'state_map_df')
+    DataHandler.save_pkl_file(state_pop_dict, 'state_pop_dict')
+    DataHandler.save_pkl_file(state_df, 'state_df')
+    DataHandler.save_pkl_file(state_map_df, 'state_map_df')
     return f'Completed'
 
 
@@ -205,47 +217,78 @@ def cases_data_for_graph(cases_s, pop):
     return df.dropna()
 
 
-def load_states_csv():
-    return pd.read_csv('{}/states.csv'.format(DATA_DIR),
-                       index_col=0,
-                       dtype=dict(fips=str))
-
-
 class FreshData:
 
     def __init__(self):
-        self.county_map_df = DataHandler().load_pkl_file('county_map_df')
-        self.county_df = DataHandler().load_pkl_file('county_df')
-        self.county_meta_df = DataHandler().load_pkl_file('county_meta_df')
+        self._load_static_data()
+        self._load_dynamic_data()
 
-        self.state_pop_dict = DataHandler().load_pkl_file('state_pop_dict')
-        self.state_df = DataHandler().load_pkl_file('state_df')
-        self.state_map_df = DataHandler().load_pkl_file('state_map_df')
+    def _load_dynamic_data(self):
+        self._county_map_df = DataHandler.load_pkl_file('county_map_df')
+        self._county_df = DataHandler.load_pkl_file('county_df')
+        self._county_meta_df = DataHandler.load_pkl_file('county_meta_df')
 
-        tmp = self.county_meta_df.county + ' County, ' + self.county_meta_df.state
+        self._state_df = DataHandler.load_pkl_file('state_df')
+        self._state_map_df = DataHandler.load_pkl_file('state_map_df')
+
+        self.state_pop_dict = DataHandler.load_pkl_file('state_pop_dict')
+
+        tmp = self._county_meta_df.county + ' County, ' + self._county_meta_df.state
         self.fips_county_dict = tmp.to_dict()
-        self.fips_pop_dict = self.county_meta_df['pop'].to_dict()
+        self.fips_pop_dict = self._county_meta_df['pop'].to_dict()
 
-        self.last_refresh_time = datetime.now()
+        self.last_load_time = datetime.now()
 
-    def refresh_if_needed(self):
-        stale_secs = (datetime.now() - self.last_refresh_time).total_seconds()
+    def _load_static_data(self):
+        self.states_meta_df = DataHandler.load_states_csv()
+        self.state_keys = [dict(value=s, label=s) for s in self.states_meta_df.index]
+        with open('{}/geojson-counties-fips.json'.format(DATA_DIR)) as f:
+            self.counties_geo = json.load(f)
+
+    def _refresh_if_needed(self):
+        stale_secs = (datetime.now() - self.last_load_time).total_seconds()
         stale_hours = stale_secs / 3600
         if stale_hours > ACCEPTABLE_STALE_HOURS:
             print('Refreshing data at {}'.format(datetime.now()))
-            self.__init__()
+            self._load_dynamic_data()
             return True
         else:
             return False
 
+    @property
+    def county_map_df(self):
+        self._refresh_if_needed()
+        return self._county_map_df
+
+    @property
+    def county_df(self):
+        self._refresh_if_needed()
+        return self._county_df
+
+    # @property
+    # def county_meta_df(self):
+    #     self.refresh_if_needed()
+    #     return self._county_meta_df
+
+    @property
+    def state_df(self):
+        self._refresh_if_needed()
+        return self._state_df
+
+    @property
+    def state_map_df(self):
+        self._refresh_if_needed()
+        return self._state_map_df
+
 
 if __name__ == '__main__':
-    get_and_save_data('')
-    raise()
-    custom_number_str(4.4)
+    fd = FreshData()
+
+    t = fd.county_map_df
+    print()
+    # get_and_save_data('')
 
 
-    df = load_states_csv()
     d = FreshData().fips_county_dict
     new = {}
     for k, v in d.items():

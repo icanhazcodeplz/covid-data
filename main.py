@@ -9,47 +9,16 @@ from data_handling import *
 from visuals import *
 
 
-app = dash.Dash(external_stylesheets=[dbc.themes.UNITED],
-                prevent_initial_callbacks=True)
-
+app = dash.Dash(external_stylesheets=[dbc.themes.UNITED])
 app.title = 'COVID-19 Hot Spots'
 server = app.server
 
 #### GLOBAL VARS ##############################################################
-with open('{}/geojson-counties-fips.json'.format(DATA_DIR)) as f:
-    counties_geo = json.load(f)
 fd = FreshData()
-states_meta_df = load_states_csv()
-state_keys = [dict(value=s, label=s) for s in states_meta_df.index]
 config = {'scrollZoom': False,
           'displayModeBar': False,
           'doubleClick': False} # TODO: Bug report, doubleClick = False does nothing
 
-# FIXME: Not all of these are actually removed! Might be plotly bug
-modebar_buttons_to_remove = ['autoScale2d',
-                             'hoverCompareCartesian',
-                             'toggleSpikelines',
-                             'lassoSelect',
-                             'zoomInGeo',
-                             'zoomOutGeo',
-                             'resetGeo',
-                             'hoverClosestGeo'
-                             'hoverClosestGl2d',
-                             'hoverClosestPie',
-                             'toggleHover',
-                             'resetViews',
-                             'sendDataToCloud',
-                             'resetViewMapbox'
-                             'lasso2d',
-                             'zoom2d',
-                             'resetScale2d'
-                             'select2d',
-                             'zoomIn2d',
-                             'zoomOut2d',
-                             'toImage',
-                             'pan2d',
-                             'hoverClosestGeo'
-                             'hoverClosestCartesian']
 
 #### LAYOUT ###################################################################
 
@@ -80,7 +49,7 @@ app.layout = dbc.Container([
                                   config=config),
                     ], color='light', inverse=False, body=True),
                     dbc.Card([
-                        dcc.Graph(figure=make_states_map(fd, states_meta_df),
+                        dcc.Graph(figure=make_states_map(fd, fd.states_meta_df),
                                   id='usa-map',
                                   config=config),
                         html.H6('Click on a state or select from the dropdown to see county-level data',
@@ -97,7 +66,7 @@ app.layout = dbc.Container([
                 dbc.Row([
                     dbc.Col([
                         dcc.Dropdown(id='state-dropdown',
-                                     options=state_keys,
+                                     options=fd.state_keys,
                                      placeholder='Select a state',
                                      clearable=False,
                                      style= {"width": "180px",
@@ -112,7 +81,7 @@ app.layout = dbc.Container([
                                 dbc.Col([
                                     dcc.Loading([
                                         dcc.Graph(id='state-map',
-                                                  figure=make_counties_map(fd, counties_geo, states_meta_df, state='USA'),
+                                                  figure=make_counties_map(fd, fd.counties_geo, fd.states_meta_df, state='USA'),
                                                   config={'displayModeBar': False}),
                                             ], type='default')
                                     ], width='auto'),
@@ -131,23 +100,26 @@ app.layout = dbc.Container([
         dcc.Markdown("""
             Built with [Plotly Dash](https://plotly.com/dash/). Data from 
             [Johns Hopkins University](https://github.com/CSSEGISandData/COVID-19). 
-            Source code at
-            [Github](https://github.com/icanhazcodeplz/covid-data). Inspiration from 
-             the [New York Times](https://www.nytimes.com/interactive/2020/us/coronavirus-us-cases.html).
+            Source code at [Github](https://github.com/icanhazcodeplz/covid-data). 
+            Inspiration from the
+            [New York Times](https://www.nytimes.com/interactive/2020/us/coronavirus-us-cases.html).
             """),
     ], justify='center',)
 ], fluid=True)
 
 
-@app.callback([Output('usa-card', 'children'),
-               Output('usa-graph', 'figure'),
-               Output('usa-map', 'figure')],
-              [Input('interval-component', 'n_intervals')],
-              prevent_initial_call=False)
+#### CALLBACKS ################################################################
+
+@app.callback(
+    [Output('usa-card', 'children'),
+     Output('usa-graph', 'figure'),
+     Output('usa-map', 'figure')],
+    [Input('interval-component', 'n_intervals')],
+    prevent_initial_call=False)
 def update_usa_data(_):
     return (make_usa_card_text(fd),
             make_usa_graph(fd),
-            make_states_map(fd, states_meta_df))
+            make_states_map(fd, fd.states_meta_df))
 
 
 @app.callback(
@@ -166,17 +138,19 @@ def map_click_or_county_selection(clickData):
 
 @app.callback(
     Output('state-map', 'figure'),
-    [Input('state-dropdown', 'value')])
+    [Input('state-dropdown', 'value')],
+    prevent_initial_call=True)
 def update_state_map(value):
     if value is None:
         value = 'USA'
-    return make_counties_map(fd, counties_geo, states_meta_df, state=value)
+    return make_counties_map(fd, fd.counties_geo, fd.states_meta_df, state=value)
 
 
 @app.callback(
     Output('county-graph', 'children'),
     [Input('state-dropdown', 'value'),
-     Input('state-map', 'clickData')])
+     Input('state-map', 'clickData')],
+    prevent_initial_call=True)
 def make_county_display(value, clickData):
     ctx = dash.callback_context
     trigger = ctx.triggered[0]['prop_id'].split('.')[0]
@@ -194,9 +168,34 @@ if __name__ == '__main__':
     app.run_server(debug=True, port=8080)
 """
 TODO:
-- Remove extra info on hover for graphs
 - Use separate card for bottom state section
-- Is values are above 10, remove digits
+
+
+# FIXME: Not all of these are actually removed! Might be plotly bug
+modebar_buttons_to_remove = ['autoScale2d',
+                             'hoverCompareCartesian',
+                             'toggleSpikelines',
+                             'lassoSelect',
+                             'zoomInGeo',
+                             'zoomOutGeo',
+                             'resetGeo',
+                             'hoverClosestGeo'
+                             'hoverClosestGl2d',
+                             'hoverClosestPie',
+                             'toggleHover',
+                             'resetViews',
+                             'sendDataToCloud',
+                             'resetViewMapbox'
+                             'lasso2d',
+                             'zoom2d',
+                             'resetScale2d'
+                             'select2d',
+                             'zoomIn2d',
+                             'zoomOut2d',
+                             'toImage',
+                             'pan2d',
+                             'hoverClosestGeo'
+                             'hoverClosestCartesian']
 """
 
 
@@ -213,16 +212,5 @@ https://covidtracking.com/data#chart-annotations
 
 https://en.wikipedia.org/wiki/List_of_geographic_centers_of_the_United_States
 https://developers.google.com/public-data/docs/canonical/states_csv
-
-def generate_table(dataframe, max_rows=10):
-    return html.Table([
-        html.Thead(html.Tr([html.Th(col) for col in dataframe.columns])),
-        html.Tbody([
-            html.Tr([
-                html.Td(dataframe.iloc[i][col]) for col in dataframe.columns
-            ]) for i in range(min(len(dataframe), max_rows))
-        ])
-    ])
-
 """
 

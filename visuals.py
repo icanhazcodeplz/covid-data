@@ -6,7 +6,6 @@ from datetime import datetime, timedelta
 import dash_html_components as html
 import dash_core_components as dcc
 
-import json
 from copy import deepcopy
 
 from data_handling import *
@@ -18,7 +17,6 @@ COLORBAR = dict(x=1,
 
 
 def make_usa_card_text(fd):
-    fd.refresh_if_needed()
     s = fd.state_df['USA']
     df = cases_data_for_graph(s, fd.state_pop_dict['USA'])
     yest = df['cases'][-1]
@@ -33,7 +31,7 @@ def make_usa_card_text(fd):
     table_header = [
         html.Thead(html.Tr([
             html.Th('New Cases {}'.format(yest_date_str)),
-            html.Th('7-Day  \r Trend'),
+            html.Th('7-Day Trend'),
             html.Th('14-Day Trend'),
         ]))]
 
@@ -49,7 +47,6 @@ def make_usa_card_text(fd):
 
 
 def make_states_map(fd, states_meta_df):
-    fd.refresh_if_needed()
     # FIXME: This logic should be done somewhere else!
     df = fd.state_map_df
     df = df.set_index('state', drop=True)
@@ -88,7 +85,6 @@ def make_states_map(fd, states_meta_df):
 
 
 def make_counties_map(fd, counties_geo, states_meta_df, fips=None, state=None):
-    fd.refresh_if_needed()
     df = fd.county_map_df
 
     if not fips and not state:
@@ -197,7 +193,6 @@ def make_cases_graph(fig, df, row=1, col=1, only_total_cases=False):
 
 
 def make_cases_subplots(fd, state, county_fips=None):
-    fd.refresh_if_needed()
     if county_fips is None:
         county_title = '(Click on a county to see county graph)'
     else:
@@ -290,7 +285,6 @@ def _add_buttons_and_annotations(fig, state_df, width=425, height=500):
 
 
 def make_usa_graph(fd):
-    fd.refresh_if_needed()
     fig = make_subplots()
     state = 'USA'
     pop = fd.state_pop_dict[state]
@@ -315,7 +309,7 @@ def make_usa_graph(fd):
 
 if __name__ == '__main__':
     fd = FreshData()
-    states_meta = load_states_csv()
+    # states_meta = load_states_csv()
 
     fig = make_cases_subplots(fd, 'USA')
     fig.show()
