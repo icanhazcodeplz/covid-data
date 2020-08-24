@@ -1,4 +1,5 @@
 import pandas as pd
+import numpy as np
 import re
 from google.cloud import storage
 import pickle
@@ -27,7 +28,7 @@ class DataHandler:
         blob = bucket.blob(destination_blob_name)
 
         blob.upload_from_file(file)
-        print("String uploaded to {}".format(destination_blob_name)) if LOG_LEVEL > 0 else None
+        print("{} uploaded to {}".format(destination_blob_name, BUCKET)) if LOG_LEVEL > 0 else None
 
     def _upload_df_as_csv_blob(self, df, name_prefix):
         csv = StringIO()
@@ -66,11 +67,10 @@ class DataHandler:
     def _save_local_pkl(self, thing, name):
         file = self._local_pkl_path(name)
         pd.to_pickle(thing, file)
-        print('saved "{}"'.format(file)) if LOG_LEVEL > 0 else None
+        print('saved "{}" locally'.format(file)) if LOG_LEVEL > 0 else None
 
     @staticmethod
     def load_pkl_file(file_prefix):
-        #TODO: Make this class or static method?
         if USE_LOCAL_DIR:
             return DataHandler()._read_local_pkl(file_prefix)
         else:
@@ -89,85 +89,87 @@ class DataHandler:
                            index_col=0,
                            dtype=dict(fips=str))
 
+    @staticmethod
+    def load_counties_geo():
+        with open('{}/geojson-counties-fips.json'.format(DATA_DIR)) as f:
+            counties_geo = json.load(f)
+        return counties_geo
 
-def process_for_county_level(df):
-    df = df.dropna()
-    df = df[~(df['Admin2'] == 'Unassigned')]
-    df = df[~(df['Admin2'].str.contains('Out of'))]
 
-    # Convert fips to string and front fill zeros to get to 5 characters
-    df['FIPS'] = df['FIPS'].apply(lambda n: str.zfill(str(int(n)), 5))
-    df = df.set_index('FIPS')
+def load_raw_covid_file(file):
+    print('Loading "{}"'.format(file)) if LOG_LEVEL > 0 else None
+    df = pd.read_csv(file)
+    df = df.drop(
+        ['iso2', 'iso3', 'code3', 'Country_Region',
+         'Lat', 'Long_', 'Combined_Key'], axis='columns')
+    df = df.rename(
+        {'Admin2': 'county', 'Province_State': 'state', 'Population': 'pop',
+         'FIPS': 'fips', 'UID': 'uid'},
+        axis='columns')
+
+    def convert_fips_to_str(f):
+        # Convert fips to string and front fill zeros to get to 5 characters
+        try:
+            return str.zfill(str(int(f)), 5)
+        except ValueError:
+            return np.nan
+
+    df['fips'] = df['fips'].apply(convert_fips_to_str)
     return df
-
-
-def new_cases(df):
-    date_cols_bool = [bool(re.match('\d*/\d*/\d\d', c)) for c in df.columns]
-    df = df.iloc[:, date_cols_bool].T
-    df = df.diff()[1:]
-    df = df.clip(lower=0) #FIXME: Remove positive tests from previous day instead?
-    df.index = pd.to_datetime(df.index)
-
-    # Only show data from March 1st on
-    df = df.iloc[38:]
-    return df
-
-
-def custom_number_str(num, max_val_for_decimals=10):
-    if num > max_val_for_decimals:
-        return str(int(round(num, 0)))
-    else:
-        return str(round(num, 1))
 
 
 def get_and_save_data(_):
-    print('Loading "{}"'.format(CASES_FILE)) if LOG_LEVEL > 0 else None
-    tot_cases_df = pd.read_csv(CASES_FILE)
-    print('Loading "{}"'.format(DEATHS_FILE)) if LOG_LEVEL > 0 else None
-    tot_deaths_df = pd.read_csv(DEATHS_FILE)
+    tot_deaths_df = load_raw_covid_file(DEATHS_FILE)
+    tot_cases_df = load_raw_covid_file(CASES_FILE)
+    uid_pop = tot_deaths_df[['uid', 'pop']].set_index('uid', drop=True)
+    tot_cases_df = tot_cases_df.join(uid_pop, on='uid')
 
-    # FIXME: This is some ugly code. Clean it up!!!
-    uid_pop = tot_deaths_df[['UID', 'Population']].set_index('UID',drop=True)
-    state_cases_df = tot_cases_df.join(uid_pop, on='UID')
-    state_cases_df = state_cases_df.drop(
-        ['UID', 'iso2', 'iso3', 'code3', 'FIPS', 'Admin2', 'Country_Region',
-         'Lat', 'Long_', 'Combined_Key'], axis='columns')
-    state_cases_df = state_cases_df.rename({'Province_State': 'state'},
-                                           axis='columns')
+    state_cases_df = tot_cases_df.drop(
+        ['uid', 'fips', 'county'], axis='columns')
     state_cases_df = state_cases_df.groupby(['state']).sum()
     state_cases_df = state_cases_df.drop(
         ['Diamond Princess', 'Guam', 'American Samoa', 'Grand Princess',
          'Northern Mariana Islands', 'Virgin Islands'], axis='rows')
     state_cases_df.loc['USA'] = state_cases_df.sum()
-    state_map_df = state_cases_df['Population'].to_frame('pop')
-    state_pop_dict = state_cases_df['Population'].to_dict()
-    state_cases_df = state_cases_df.drop('Population', axis='columns')
+
+    def new_cases(df):
+        date_cols_bool = [bool(re.match('\d*/\d*/\d\d', c)) for c in df.columns]
+        df = df.iloc[:, date_cols_bool].T
+        df = df.diff()[1:]
+        df = df.clip(lower=0) #FIXME: Remove positive tests from previous day instead?
+        df.index = pd.to_datetime(df.index)
+
+        # Only show data from March 1st on
+        return df.iloc[38:]
+
+    state_map_df = state_cases_df['pop'].to_frame('pop')
+    state_cases_df = state_cases_df.drop('pop', axis='columns')
     state_df = new_cases(state_cases_df)
 
-    tot_cases_df = process_for_county_level(tot_cases_df)
-    tot_deaths_df = process_for_county_level(tot_deaths_df)
+    county_df = tot_cases_df.dropna().set_index('fips', drop=True)
+    county_df = county_df[~(county_df['county'] == 'Unassigned')]
+    county_df = county_df[~(county_df['county'].str.contains('Out of'))]
+    county_df = new_cases(county_df)
 
-    county_df = new_cases(tot_cases_df)
-
-    county_meta_df = tot_deaths_df[['Population', 'Admin2', 'Province_State']]
-    county_meta_df = county_meta_df.rename({'Admin2': 'county', 'Province_State': 'state',
-                            'Population': 'pop'}, axis='columns')
-
-    fips_pop_dict = county_meta_df['pop'].to_dict()
-    # def per_100k(s):
-    #     return s / fips_pop_dict[s.name] * 100000
-
-    def make_map_df(df, map_df, loc_pop_dict):
+    def make_map_df(df, map_df):
+        loc_pop_dict = map_df['pop'].to_dict()
         ave_df = df.rolling(7, ).mean().dropna()
         ave_rate_df = ave_df.apply(lambda s: s / loc_pop_dict[s.name] * 100000)
         map_df['week_ave'] = ave_df.iloc[-1]
         map_df['ave_rate'] = ave_rate_df.iloc[-1]
         return map_df.reset_index()
 
-    county_map_df = county_meta_df[['county', 'state']]
-    county_map_df = make_map_df(county_df, county_map_df, fips_pop_dict)
+    county_map_df = tot_deaths_df[['pop', 'county', 'state', 'fips']]
+    county_map_df = county_map_df.set_index('fips', drop=True)
 
-    state_map_df = make_map_df(state_df, state_map_df, state_pop_dict)
+    county_map_df = make_map_df(county_df, county_map_df)
+    state_map_df = make_map_df(state_df, state_map_df)
+
+    def custom_number_str(num, max_val_for_decimals=10):
+        if num > max_val_for_decimals:
+            return str(int(round(num, 0)))
+        else:
+            return str(round(num, 1))
 
     county_map_df['text'] = [
         '<b>{} County, {}</b><br>Avg. Daily Cases: {}<br>             Per 100k: {}'.format(
@@ -184,11 +186,9 @@ def get_and_save_data(_):
             custom_number_str(tup.ave_rate)
         ) for tup in state_map_df.itertuples()]
 
-    DataHandler.save_pkl_file(county_map_df, 'county_map_df')
     DataHandler.save_pkl_file(county_df, 'county_df')
-    DataHandler.save_pkl_file(county_meta_df, 'county_meta_df')
+    DataHandler.save_pkl_file(county_map_df, 'county_map_df')
 
-    DataHandler.save_pkl_file(state_pop_dict, 'state_pop_dict')
     DataHandler.save_pkl_file(state_df, 'state_df')
     DataHandler.save_pkl_file(state_map_df, 'state_map_df')
     return f'Completed'
@@ -226,24 +226,23 @@ class FreshData:
     def _load_dynamic_data(self):
         self._county_map_df = DataHandler.load_pkl_file('county_map_df')
         self._county_df = DataHandler.load_pkl_file('county_df')
-        self._county_meta_df = DataHandler.load_pkl_file('county_meta_df')
+
+        tmp_df = self._county_map_df.set_index('fips', drop=True)
+        self.fips_pop_dict = tmp_df['pop'].to_dict()
+        self.fips_county_dict = (
+                tmp_df.county + ' County, ' + tmp_df.state).to_dict()
 
         self._state_df = DataHandler.load_pkl_file('state_df')
         self._state_map_df = DataHandler.load_pkl_file('state_map_df')
 
-        self.state_pop_dict = DataHandler.load_pkl_file('state_pop_dict')
-
-        tmp = self._county_meta_df.county + ' County, ' + self._county_meta_df.state
-        self.fips_county_dict = tmp.to_dict()
-        self.fips_pop_dict = self._county_meta_df['pop'].to_dict()
+        self.state_pop_dict = self._state_map_df.set_index('state')['pop'].to_dict()
 
         self.last_load_time = datetime.now()
 
     def _load_static_data(self):
         self.states_meta_df = DataHandler.load_states_csv()
         self.state_keys = [dict(value=s, label=s) for s in self.states_meta_df.index]
-        with open('{}/geojson-counties-fips.json'.format(DATA_DIR)) as f:
-            self.counties_geo = json.load(f)
+        self.counties_geo = DataHandler.load_counties_geo()
 
     def _refresh_if_needed(self):
         stale_secs = (datetime.now() - self.last_load_time).total_seconds()
@@ -282,68 +281,10 @@ class FreshData:
 
 
 if __name__ == '__main__':
-    fd = FreshData()
-
-    t = fd.county_map_df
-    print()
-    # get_and_save_data('')
-
-
-    d = FreshData().fips_county_dict
-    new = {}
-    for k, v in d.items():
-        new[v.split(', ')[1]] = k[:2]
-        print()
-    print()
+    get_and_save_data('')
+    # fd = FreshData()
+    #
+    # t = fd.county_map_df
 
     print()
-    print()
 
-
-# def clean_county_s(county_s):
-#     if county_s.sum() > 0:
-#         while county_s[0] == 0.0:
-#             county_s = county_s[1:]
-#         #FIXME: Remove positive tests from previous day instead?
-#         county_s = county_s.clip(lower=0)
-#         return county_s
-#     else:
-#         return None
-
-#
-# def county_summary(county_s, county_rate_s):
-#
-#     yest = county_s.iloc[-1]
-#     week = county_s.tail(7).sum()
-#     two_week_ago = county_s.tail(14).head(7).sum()
-#     if two_week_ago > 0:
-#         week_change = (week / two_week_ago - 1) * 100
-#     elif (two_week_ago == 0) and (week == 0):
-#         week_change = 0
-#     else:
-#         week_change = 100
-#
-#
-#     # week_change = int(round(week_change))
-#     # if week_change >= 0:
-#     #     week_change = '+{}%'.format(week_change)
-#     # else:
-#     #     week_change = '{}%'.format(week_change)
-#
-#     if week < 10:
-#         trend = 'N/A'
-#     elif week_change < -20:
-#         trend = 'Falling Quickly'
-#     elif week_change < -2:
-#         trend = 'Falling Slowly'
-#     elif week_change > 20:
-#         trend = 'Rising Quickly'
-#     elif week_change > 2:
-#         trend = 'Rising Slowly'
-#     else:
-#         trend = 'No Change'
-#
-#     # summary_df = pd.DataFrame(data=[cases, case_rate],
-#     #                           columns=['', 'Yesterday', 'Past Week'])
-#     # return summary_df, trend
-#

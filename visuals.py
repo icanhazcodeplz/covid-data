@@ -90,7 +90,7 @@ def make_counties_map(fd, counties_geo, states_meta_df, fips=None, state=None):
     if not fips and not state:
         state = 'USA'
     elif fips:
-        state = df[df['FIPS'] == fips]['state'].values[0]
+        state = df[df['fips'] == fips]['state'].values[0]
 
     geo = deepcopy(counties_geo)
     if state != 'USA':
@@ -103,7 +103,7 @@ def make_counties_map(fd, counties_geo, states_meta_df, fips=None, state=None):
         go.Choroplethmapbox(
             colorbar=COLORBAR,
             geojson=geo,
-            locations=df['FIPS'],
+            locations=df['fips'],
             z=df['ave_rate'],
             customdata=df['state'],
             text=df['text'],
