@@ -32,19 +32,18 @@ def make_usa_card_text(fd):
 
     table_header = [
         html.Thead(html.Tr([
-            html.Th(dcc.Markdown('New Cases  \n {}'.format(yest_date_str))),
-            html.Th(dcc.Markdown('7-Day  \n Trend')),
-            html.Th(dcc.Markdown('14-Day  \n Trend')),
-        ]))
-    ]
+            html.Th('New Cases {}'.format(yest_date_str)),
+            html.Th('7-Day  \r Trend'),
+            html.Th('14-Day Trend'),
+        ]))]
 
+    style = {'textAlign': 'center'}
     table_body = [
-        html.Tbody([html.Tr([
-            html.Td('{:,.0f}'.format(int(yest))),
-            html.Td('{}%'.format(int(week_change))),
-            html.Td('{}%'.format(int(two_week_change))),
-        ])])
-    ]
+        html.Tbody(html.Tr([
+            html.Td('{:,.0f}'.format(int(yest)), style=style),
+            html.Td('{}%'.format(int(week_change)), style=style),
+            html.Td('{}%'.format(int(two_week_change)), style=style),
+        ]))]
 
     return table_header + table_body
 
@@ -148,39 +147,51 @@ def make_cases_graph(fig, df, row=1, col=1, only_total_cases=False):
         days_back_to_start -= 14
 
     if not only_total_cases:
-        fig.add_trace(go.Bar(
-            x=list(df.index), y=list(df['cases_rate']), name='Cases Per 100k',
-            marker=dict(color='red'), opacity=0.5),
+        fig.add_trace(
+            go.Bar(
+                x=list(df.index), y=list(df['cases_rate']), name='Cases Per 100k',
+                marker=dict(color='red'), opacity=0.5
+            ),
             row=row, col=col
         )
-        fig.add_trace(go.Scatter(
-            x=list(df.index), y=list(df['cases_ave_rate']), name='7 Day Average.', line=dict(color='red')),
-            row=row, col=col
+        fig.add_trace(
+            go.Scatter(
+                x=list(df.index), y=list(df['cases_ave_rate']),
+                name='7 Day Average.', line=dict(color='red'),
+                hoverinfo='skip'
+            ),
+            row=row, col=col,
         )
-        fig.add_trace(go.Scatter(
-            x=list(df.index), y=[50]*len(df), line=dict(color='rgba(0, 0, 0, 0.5)', dash='dash'),
-            hoverinfo='skip'),
+        fig.add_trace(
+            go.Scatter(
+                x=list(df.index), y=[50]*len(df), line=dict(color='rgba(0, 0, 0, 0.5)', dash='dash'),
+                hoverinfo='skip'
+            ),
             row=row, col=col
         )
 
-    fig.add_trace(go.Bar(
-        x=list(df.index), y=list(df['cases']), name='Cases',
-        marker=dict(color='red'), opacity=0.5,
-        visible=only_total_cases),
+    fig.add_trace(
+        go.Bar(
+            x=list(df.index), y=list(df['cases']), name='Cases',
+            marker=dict(color='red'), opacity=0.5,
+            visible=only_total_cases
+        ),
         row=row, col=col
     )
-    fig.add_trace(go.Scatter(
-        x=list(df.index), y=list(df['cases_ave']), name='7 Day Average',
-        line=dict(color='red'),
-        visible=only_total_cases),
+    fig.add_trace(
+        go.Scatter(
+            x=list(df.index), y=list(df['cases_ave']), name='7 Day Average',
+            line=dict(color='red'),
+            visible=only_total_cases, hoverinfo='skip'
+        ),
         row=row, col=col
     )
 
     fig.update_xaxes(
-                     tickformat='%b %d',tickmode='linear',
+                     tickformat='%b %d', tickmode='linear',
                      tick0=df.index[-days_back_to_start],
-                     dtick=14 * 86400000.0,showgrid=True, ticks="outside",
-                     tickson="boundaries", ticklen=3, tickangle=45,
+                     dtick=14 * 86400000.0,showgrid=True, ticks='outside',
+                     tickson='boundaries', ticklen=3, tickangle=45,
                      row=row, col=col)
     return fig
 
@@ -207,10 +218,12 @@ def make_cases_subplots(fd, state, county_fips=None):
             fig = make_cases_graph(fig, county_df, row=2, col=1)
 
     title_annotations = [
-        dict(x=0.5, y=1.08, showarrow=False, xref='paper', yref='paper', yanchor='top', xanchor='center',
+        dict(x=0.5, y=1.08, showarrow=False, xref='paper', yref='paper',
+             yanchor='top', xanchor='center',
              text='<b>{}</b>'.format(state), font={'size': 18}
              ),
-        dict(x=0.5, y=0.44, showarrow=False, xref='paper', yref='paper', yanchor='middle', xanchor='center',
+        dict(x=0.5, y=0.44, showarrow=False, xref='paper', yref='paper',
+             yanchor='middle', xanchor='center',
              text='<b>{}</b>'.format(county_title), font={'size': 16}
              )
     ]
