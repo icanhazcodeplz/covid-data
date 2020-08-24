@@ -104,6 +104,13 @@ def new_cases(df):
     return df
 
 
+def custom_number_str(num, max_val_for_decimals=10):
+    if num > max_val_for_decimals:
+        return str(int(round(num, 0)))
+    else:
+        return str(round(num, 1))
+
+
 def get_and_save_data(_):
     print('Loading "{}"'.format(CASES_FILE)) if LOG_LEVEL > 0 else None
     tot_cases_df = pd.read_csv(CASES_FILE)
@@ -151,12 +158,19 @@ def get_and_save_data(_):
     state_map_df = make_map_df(state_df, state_map_df, state_pop_dict)
 
     county_map_df['text'] = [
-        '<b>{} County, {}</b><br>Avg. Daily Cases: {:.1f}<br>             Per 100k: {:.1f}'.format(
-        tup.county, tup.state, tup.week_ave, tup.ave_rate) for tup in county_map_df.itertuples()]
+        '<b>{} County, {}</b><br>Avg. Daily Cases: {}<br>             Per 100k: {}'.format(
+            tup.county,
+            tup.state,
+            custom_number_str(tup.week_ave),
+            custom_number_str(tup.ave_rate)
+        ) for tup in county_map_df.itertuples()]
 
     state_map_df['text'] = [
-        '<b>{}</b><br>Avg. Daily Cases: {:.1f}<br>             Per 100k: {:.1f}'.format(
-        tup.state, tup.week_ave, tup.ave_rate) for tup in state_map_df.itertuples()]
+        '<b>{}</b><br>Avg. Daily Cases: {}<br>             Per 100k: {}'.format(
+            tup.state,
+            custom_number_str(tup.week_ave),
+            custom_number_str(tup.ave_rate)
+        ) for tup in state_map_df.itertuples()]
 
     DataHandler().save_pkl_file(county_map_df, 'county_map_df')
     DataHandler().save_pkl_file(county_df, 'county_df')
@@ -226,6 +240,11 @@ class FreshData:
 
 
 if __name__ == '__main__':
+    get_and_save_data('')
+    raise()
+    custom_number_str(4.4)
+
+
     df = load_states_csv()
     d = FreshData().fips_county_dict
     new = {}
@@ -233,7 +252,6 @@ if __name__ == '__main__':
         new[v.split(', ')[1]] = k[:2]
         print()
     print()
-    # get_and_save_data('')
 
     print()
     print()
