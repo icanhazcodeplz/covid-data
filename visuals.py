@@ -5,7 +5,6 @@ import numpy as np
 from datetime import datetime, timedelta
 import dash_html_components as html
 import dash_core_components as dcc
-
 from copy import deepcopy
 
 from data_handling import *
@@ -16,9 +15,22 @@ COLORBAR = dict(x=1,
                            font=dict(size=14, color='#A10C0C')),)
 
 
-def make_usa_card_text(fd):
-    s = fd.state_df['USA']
-    df = cases_data_for_graph(s, fd.state_pop_dict['USA'])
+def cases_data_for_graph(cases_s, pop=None):
+    if cases_s.sum() == 0:
+        return None
+
+    df = cases_s.to_frame('cases')
+    df['cases_ave'] = df['cases'].rolling(7, ).mean()
+
+    if pop:
+        df['cases_rate'] = df['cases'] / pop * 100000
+        df['cases_rate_ave'] = df['cases_ave'] / pop * 100000
+
+    return df.dropna()
+
+
+def make_trend_table(ser):
+    df = cases_data_for_graph(ser)
     yest = df['cases'][-1]
     yest_date_str = df.index[-1].strftime('%b %-d')
     ave = df['cases_ave'][-1]
@@ -46,18 +58,14 @@ def make_usa_card_text(fd):
     return table_header + table_body
 
 
-def make_states_map(fd, states_meta_df):
-    # FIXME: This logic should be done somewhere else!
-    df = fd.state_map_df
-    df = df.set_index('state', drop=True)
-    df = df.join(states_meta_df['abbr'])
+def make_states_map(states_map_df, date):
 
     fig = go.Figure(data=go.Choropleth(
         locationmode='USA-states',
-        locations=df['abbr'],
-        z=df['ave_rate'].astype(float),  # Data to be color-coded
-        customdata=df.index.to_list(),
-        text=df['text'],
+        locations=states_map_df['abbr'],
+        z=states_map_df['ave_rate'].astype(float),  # Data to be color-coded
+        customdata=states_map_df.index.to_list(),
+        text=states_map_df['text'],
         zmin=0,
         zmax=Z_MAX,
         colorscale='Reds',
@@ -65,7 +73,6 @@ def make_states_map(fd, states_meta_df):
         colorbar=COLORBAR,
     ))
 
-    last_day_of_data = fd.county_df.index[-1].strftime('%b %-d')
     fig.update_layout(
         margin=dict(l=3, r=3, b=3, t=0, pad=0),
         geo_scope='usa',
@@ -76,16 +83,15 @@ def make_states_map(fd, states_meta_df):
             y=0.0,
             xref='paper',
             yref='paper',
-            text='As of {}'.format(last_day_of_data),
+            text='As of {}'.format(date.strftime('%b %-d')),
             showarrow=False
         )]
-
     )
     return fig
 
 
-def make_counties_map(fd, counties_geo, states_meta_df, fips=None, state=None):
-    df = fd.county_map_df
+def make_counties_map(counties_map_df, counties_geo, states_meta_df, fips=None, state=None):
+    df = counties_map_df
 
     if not fips and not state:
         state = 'USA'
@@ -152,7 +158,7 @@ def make_cases_graph(fig, df, row=1, col=1, only_total_cases=False):
         )
         fig.add_trace(
             go.Scatter(
-                x=list(df.index), y=list(df['cases_ave_rate']),
+                x=list(df.index), y=list(df['cases_rate_ave']),
                 name='7 Day Average.', line=dict(color='red'),
                 hoverinfo='skip'
             ),
@@ -201,16 +207,16 @@ def make_cases_subplots(fd, state, county_fips=None):
     fig = make_subplots(rows=2, shared_xaxes=False, vertical_spacing=0.2)
 
     state_pop = fd.state_pop_dict[state]
-    state_df = cases_data_for_graph(fd.state_df[state], state_pop)
-    fig = make_cases_graph(fig, state_df, row=1, col=1)
+    states_df = cases_data_for_graph(fd.states_df[state], state_pop)
+    fig = make_cases_graph(fig, states_df, row=1, col=1)
 
     if county_fips:
         county_pop = fd.fips_pop_dict[county_fips]
-        county_df = cases_data_for_graph(fd.county_df[county_fips], county_pop)
-        if county_df is None:
+        counties_df = cases_data_for_graph(fd.counties_df[county_fips], county_pop)
+        if counties_df is None:
             county_title = 'No recorded positive cases in {}'.format(county_title)
         else:
-            fig = make_cases_graph(fig, county_df, row=2, col=1)
+            fig = make_cases_graph(fig, counties_df, row=2, col=1)
 
     title_annotations = [
         dict(x=0.5, y=1.08, showarrow=False, xref='paper', yref='paper',
@@ -225,26 +231,26 @@ def make_cases_subplots(fd, state, county_fips=None):
 
     fig.update_layout(annotations=title_annotations)
 
-    fig = _add_buttons_and_annotations(fig, state_df)
+    fig = _add_buttons_and_annotations(fig, states_df)
     return fig
 
 
-def _add_buttons_and_annotations(fig, state_df, width=425, height=500):
+def _add_buttons_and_annotations(fig, states_df, width=425, height=500):
     x_loc = 20
     x_loc50 = 11
-    if state_df['cases_ave_rate'].max() < 45:
+    if states_df['cases_rate_ave'].max() < 45:
         ay = 25
     else:
         ay = -25
     cases_rate_annotations = tuple([
-        dict(x=state_df.index[x_loc50], y=50,
+        dict(x=states_df.index[x_loc50], y=50,
              xref='x1', yref='y1', text='50 Cases<br>per 100k', ax=0, ay=ay),
-        dict(x=state_df.index[x_loc], y=state_df['cases_ave_rate'].iloc[x_loc],
+        dict(x=states_df.index[x_loc], y=states_df['cases_rate_ave'].iloc[x_loc],
              xref='x1', yref='y1', text='7 Day Average', ax=0, ay=-25,
              ),
     ])
     cases_annotations = tuple([
-        dict(x=state_df.index[x_loc], y=state_df['cases_ave'].iloc[x_loc],
+        dict(x=states_df.index[x_loc], y=states_df['cases_ave'].iloc[x_loc],
                              xref="x", yref="y", text='7 Day Average',
                              ax=0, ay=-25)
     ])
@@ -284,11 +290,9 @@ def _add_buttons_and_annotations(fig, state_df, width=425, height=500):
     return fig
 
 
-def make_usa_graph(fd):
+def make_usa_graph(ser):
     fig = make_subplots()
-    state = 'USA'
-    pop = fd.state_pop_dict[state]
-    df = cases_data_for_graph(fd.state_df[state], pop)
+    df = cases_data_for_graph(ser)
     fig = make_cases_graph(fig, df, row=1, col=1, only_total_cases=True)
 
     x_loc = 30
@@ -314,26 +318,3 @@ if __name__ == '__main__':
     fig = make_cases_subplots(fd, 'USA')
     fig.show()
 
-    # with open('data/geojson-counties-fips.json') as f:
-    #     counties_geo = json.load(f)
-    # fig = make_counties_map(fd, counties_geo, states_meta, fips=None, state='Alabama')
-    # fig.show()
-
-
-    # fig = make_state_map(fd, states_meta)
-    # fig.show()
-    # state='New York'
-    # fips = '53047'
-    # # fips = None
-    # f = make_cases_subplots(fd, state, county_fips=fips)
-    # f.show()
-    print()
-
-    # states_df = load_states_csv()
-    # fips = '53047'
-    # fips2 = '02290'
-    # f = make_counties_map(fd, counties, states_df)
-    # f.show()
-    # f = update_map(f, fd, states_df, fips)
-    # f = update_map(f, fd, states_df, fips2)
-    #

@@ -38,18 +38,18 @@ app.layout = dbc.Container([
                 dbc.Row([
                     dbc.Card([
                         html.H4('USA', style={'textAlign': 'center'}),
-                        dbc.Table(make_usa_card_text(fd),
+                        dbc.Table(make_trend_table(fd.states_df['USA']),
                                   bordered=True,
                                   dark=False,
                                   striped=True,
                                   id='usa-card',
                                   className='table-primary'),
-                        dcc.Graph(figure=make_usa_graph(fd),
+                        dcc.Graph(figure=make_usa_graph(fd.states_df['USA']),
                                   id='usa-graph',
                                   config=config),
                     ], color='light', inverse=False, body=True),
                     dbc.Card([
-                        dcc.Graph(figure=make_states_map(fd, fd.states_meta_df),
+                        dcc.Graph(figure=make_states_map(fd.states_map_df, fd.states_df.index[-1]),
                                   id='usa-map',
                                   config=config),
                         html.H6('Click on a state or select from the dropdown to see county-level data',
@@ -66,7 +66,7 @@ app.layout = dbc.Container([
                 dbc.Row([
                     dbc.Col([
                         dcc.Dropdown(id='state-dropdown',
-                                     options=fd.state_keys,
+                                     options=[dict(value=s, label=s) for s in fd.states_meta_df.index],
                                      placeholder='Select a state',
                                      clearable=False,
                                      style= {"width": "180px",
@@ -81,7 +81,7 @@ app.layout = dbc.Container([
                                 dbc.Col([
                                     dcc.Loading([
                                         dcc.Graph(id='state-map',
-                                                  figure=make_counties_map(fd, fd.counties_geo, fd.states_meta_df, state='USA'),
+                                                  figure=make_counties_map(fd.counties_map_df, fd.counties_geo, fd.states_meta_df, state='USA'),
                                                   config={'displayModeBar': False}),
                                             ], type='default')
                                     ], width='auto'),
@@ -117,9 +117,9 @@ app.layout = dbc.Container([
     [Input('interval-component', 'n_intervals')],
     prevent_initial_call=False)
 def update_usa_data(_):
-    return (make_usa_card_text(fd),
-            make_usa_graph(fd),
-            make_states_map(fd, fd.states_meta_df))
+    return (make_trend_table(fd.states_df['USA']),
+            make_usa_graph(fd.states_df['USA']),
+            make_states_map(fd.states_map_df, fd.states_df.index[-1]))
 
 
 @app.callback(
@@ -143,7 +143,7 @@ def map_click_or_county_selection(clickData):
 def update_state_map(value):
     if value is None:
         value = 'USA'
-    return make_counties_map(fd, fd.counties_geo, fd.states_meta_df, state=value)
+    return make_counties_map(fd.counties_map_df, fd.counties_geo, fd.states_meta_df, state=value)
 
 
 @app.callback(

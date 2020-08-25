@@ -142,14 +142,14 @@ def get_and_save_data(_):
         # Only show data from March 1st on
         return df.iloc[38:]
 
-    state_map_df = state_cases_df['pop'].to_frame('pop')
+    states_map_df = state_cases_df['pop'].to_frame('pop')
     state_cases_df = state_cases_df.drop('pop', axis='columns')
-    state_df = new_cases(state_cases_df)
+    states_df = new_cases(state_cases_df)
 
-    county_df = tot_cases_df.dropna().set_index('fips', drop=True)
-    county_df = county_df[~(county_df['county'] == 'Unassigned')]
-    county_df = county_df[~(county_df['county'].str.contains('Out of'))]
-    county_df = new_cases(county_df)
+    counties_df = tot_cases_df.dropna().set_index('fips', drop=True)
+    counties_df = counties_df[~(counties_df['county'] == 'Unassigned')]
+    counties_df = counties_df[~(counties_df['county'].str.contains('Out of'))]
+    counties_df = new_cases(counties_df)
 
     def make_map_df(df, map_df):
         loc_pop_dict = map_df['pop'].to_dict()
@@ -159,11 +159,11 @@ def get_and_save_data(_):
         map_df['ave_rate'] = ave_rate_df.iloc[-1]
         return map_df.reset_index()
 
-    county_map_df = tot_deaths_df[['pop', 'county', 'state', 'fips']]
-    county_map_df = county_map_df.set_index('fips', drop=True)
+    counties_map_df = tot_deaths_df[['pop', 'county', 'state', 'fips']]
+    counties_map_df = counties_map_df.set_index('fips', drop=True)
 
-    county_map_df = make_map_df(county_df, county_map_df)
-    state_map_df = make_map_df(state_df, state_map_df)
+    counties_map_df = make_map_df(counties_df, counties_map_df)
+    states_map_df = make_map_df(states_df, states_map_df)
 
     def custom_number_str(num, max_val_for_decimals=10):
         if num > max_val_for_decimals:
@@ -171,78 +171,53 @@ def get_and_save_data(_):
         else:
             return str(round(num, 1))
 
-    county_map_df['text'] = [
+    counties_map_df['text'] = [
         '<b>{} County, {}</b><br>Avg. Daily Cases: {}<br>             Per 100k: {}'.format(
             tup.county,
             tup.state,
             custom_number_str(tup.week_ave),
             custom_number_str(tup.ave_rate)
-        ) for tup in county_map_df.itertuples()]
+        ) for tup in counties_map_df.itertuples()]
 
-    state_map_df['text'] = [
+    states_map_df['text'] = [
         '<b>{}</b><br>Avg. Daily Cases: {}<br>             Per 100k: {}'.format(
             tup.state,
             custom_number_str(tup.week_ave),
             custom_number_str(tup.ave_rate)
-        ) for tup in state_map_df.itertuples()]
+        ) for tup in states_map_df.itertuples()]
 
-    DataHandler.save_pkl_file(county_df, 'county_df')
-    DataHandler.save_pkl_file(county_map_df, 'county_map_df')
+    DataHandler.save_pkl_file(counties_df, 'counties_df')
+    DataHandler.save_pkl_file(counties_map_df, 'counties_map_df')
 
-    DataHandler.save_pkl_file(state_df, 'state_df')
-    DataHandler.save_pkl_file(state_map_df, 'state_map_df')
+    DataHandler.save_pkl_file(states_df, 'states_df')
+    DataHandler.save_pkl_file(states_map_df, 'states_map_df')
     return f'Completed'
-
-
-def county_series(df, county_key):
-    county_s = df[df['Combined_Key'] == county_key]
-    date_cols_bool = [bool(re.match('\d*/\d*/\d\d', c)) for c in
-                      county_s.columns]
-    county_s = county_s.iloc[:, date_cols_bool]
-    county_s = county_s.T
-    county_s.index = pd.to_datetime(county_s.index)
-    county_s.columns = ['cases']
-    return county_s['cases']
-
-
-def cases_data_for_graph(cases_s, pop):
-    if cases_s.sum() == 0:
-        return None
-
-    df = cases_s.to_frame('cases')
-    df['cases_rate'] = df['cases'] / pop * 100000
-
-    df['cases_ave'] = df['cases'].rolling(7, ).mean()
-    df['cases_ave_rate'] = df['cases_ave'] / pop * 100000
-    return df.dropna()
 
 
 class FreshData:
 
     def __init__(self):
-        self._load_static_data()
+        self.states_meta_df = DataHandler.load_states_csv()
+        self.counties_geo = DataHandler.load_counties_geo()
+
         self._load_dynamic_data()
 
     def _load_dynamic_data(self):
-        self._county_map_df = DataHandler.load_pkl_file('county_map_df')
-        self._county_df = DataHandler.load_pkl_file('county_df')
+        self._counties_map_df = DataHandler.load_pkl_file('counties_map_df')
+        self._counties_df = DataHandler.load_pkl_file('counties_df')
 
-        tmp_df = self._county_map_df.set_index('fips', drop=True)
+        tmp_df = self._counties_map_df.set_index('fips', drop=True)
         self.fips_pop_dict = tmp_df['pop'].to_dict()
         self.fips_county_dict = (
                 tmp_df.county + ' County, ' + tmp_df.state).to_dict()
 
-        self._state_df = DataHandler.load_pkl_file('state_df')
-        self._state_map_df = DataHandler.load_pkl_file('state_map_df')
+        self._states_df = DataHandler.load_pkl_file('states_df')
+        self._states_map_df = DataHandler.load_pkl_file('states_map_df')
+        self._states_map_df = self._states_map_df.set_index('state', drop=True)
+        self._states_map_df = self._states_map_df.join(self.states_meta_df['abbr'])
 
-        self.state_pop_dict = self._state_map_df.set_index('state')['pop'].to_dict()
-
+        self.state_pop_dict = self._states_map_df['pop'].to_dict()
         self.last_load_time = datetime.now()
-
-    def _load_static_data(self):
-        self.states_meta_df = DataHandler.load_states_csv()
-        self.state_keys = [dict(value=s, label=s) for s in self.states_meta_df.index]
-        self.counties_geo = DataHandler.load_counties_geo()
 
     def _refresh_if_needed(self):
         stale_secs = (datetime.now() - self.last_load_time).total_seconds()
@@ -255,36 +230,31 @@ class FreshData:
             return False
 
     @property
-    def county_map_df(self):
+    def counties_map_df(self):
         self._refresh_if_needed()
-        return self._county_map_df
+        return self._counties_map_df
 
     @property
-    def county_df(self):
+    def counties_df(self):
         self._refresh_if_needed()
-        return self._county_df
-
-    # @property
-    # def county_meta_df(self):
-    #     self.refresh_if_needed()
-    #     return self._county_meta_df
+        return self._counties_df
 
     @property
-    def state_df(self):
+    def states_df(self):
         self._refresh_if_needed()
-        return self._state_df
+        return self._states_df
 
     @property
-    def state_map_df(self):
+    def states_map_df(self):
         self._refresh_if_needed()
-        return self._state_map_df
+        return self._states_map_df
 
 
 if __name__ == '__main__':
     get_and_save_data('')
     # fd = FreshData()
     #
-    # t = fd.county_map_df
+    # t = fd.counties_map_df
 
     print()
 
