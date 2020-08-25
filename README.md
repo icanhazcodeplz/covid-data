@@ -8,3 +8,8 @@ The inspiration for the map is from the [NYTimes](https://www.nytimes.com/intera
 
 The dashboard is currently hosted on Google Cloud Platform, and is available at [www.covid19dashboard.app]().
 
+## Contributing
+
+Not ready yet! I am still finalizing the layout, and am not ready to get outside help yet.
+Once I have documented and added tests, I will open up this project for contributions.
+Check back soon (let's say, mid-september). 
