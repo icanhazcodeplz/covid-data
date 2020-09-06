@@ -10,12 +10,12 @@ from copy import deepcopy
 from data_handling import *
 
 Z_MAX = 50
-COLORBAR = dict(x=1,
-                title=dict(text='Average<br>Daily<br>Cases<br>per 100k',
-                           font=dict(size=14, color='#A10C0C')),)
+MAP_WIDTH = 625
+COLORBAR = dict(x=1, title=dict(text='Average<br>Daily<br>Cases<br>per 100k',
+                                font=dict(size=14, color='#A10C0C')))
 
 
-def cases_data_for_graph(cases_s, pop=None):
+def _add_ave_and_rate_cols(cases_s, pop=None):
     if cases_s.sum() == 0:
         return None
 
@@ -30,29 +30,42 @@ def cases_data_for_graph(cases_s, pop=None):
 
 
 def make_trend_table(ser):
-    df = cases_data_for_graph(ser)
-    yest = df['cases'][-1]
+    df = _add_ave_and_rate_cols(ser)
+    yest = int(df['cases'][-1])
     yest_date_str = df.index[-1].strftime('%b %-d')
     ave = df['cases_ave'][-1]
     ave_week_ago = df['cases_ave'][-8]
     ave_two_week_ago = df['cases_ave'][-15]
 
-    week_change = round(((ave - ave_week_ago) / ave_week_ago * 100), 0)
-    two_week_change = round(((ave - ave_two_week_ago) / ave_two_week_ago * 100), 0)
+    def percent_change_str(old, new):
+        if old == 0 and new > 0:
+            change = 100
+        elif old == 0 and new == 0:
+            change = 0
+        else:
+            change = int(round(((new - old) / old * 100), 0))
 
-    table_header = [
-        html.Thead(html.Tr([
-            html.Th('New Cases {}'.format(yest_date_str)),
-            html.Th('7-Day Trend'),
-            html.Th('14-Day Trend'),
-        ]))]
+        if change > 0:
+            return '+{}%'.format(change)
+        else:
+            return '{}%'.format(change)
+
+    week_change = percent_change_str(ave_week_ago, ave)
+    two_week_change = percent_change_str(ave_two_week_ago, ave)
 
     style = {'textAlign': 'center'}
+    table_header = [
+        html.Thead(html.Tr([
+            html.Th('New Cases {}'.format(yest_date_str), style=style),
+            html.Th('7-Day Trend', style=style),
+            html.Th('14-Day Trend', style=style),
+        ]))]
+
     table_body = [
         html.Tbody(html.Tr([
-            html.Td('{:,.0f}'.format(int(yest)), style=style),
-            html.Td('{}%'.format(int(week_change)), style=style),
-            html.Td('{}%'.format(int(two_week_change)), style=style),
+            html.Td('{:,.0f}'.format(yest), style=style),
+            html.Td(week_change, style=style),
+            html.Td(two_week_change, style=style),
         ]))]
 
     return table_header + table_body
@@ -63,7 +76,7 @@ def make_states_map(states_map_df, date):
     fig = go.Figure(data=go.Choropleth(
         locationmode='USA-states',
         locations=states_map_df['abbr'],
-        z=states_map_df['ave_rate'].astype(float),  # Data to be color-coded
+        z=states_map_df['ave_rate'].astype(float),
         customdata=states_map_df.index.to_list(),
         text=states_map_df['text'],
         zmin=0,
@@ -76,8 +89,8 @@ def make_states_map(states_map_df, date):
     fig.update_layout(
         margin=dict(l=3, r=3, b=3, t=0, pad=0),
         geo_scope='usa',
-        width=650,
-        height=320,
+        width=MAP_WIDTH,
+        height=310,
         annotations=[dict(
             x=0.0,
             y=0.0,
@@ -124,8 +137,8 @@ def make_counties_map(counties_map_df, counties_geo, states_meta_df, fips=None, 
     fig.update_layout(
         mapbox_accesstoken=open(".mapbox_token").read(),  # you will need your own token,
         mapbox_style='light',
-        width=635,
-        height=500,
+        width=MAP_WIDTH,
+        height=410,
         margin=dict(l=3, r=3, b=3, t=3, pad=10),
         mapbox_zoom=states_meta_df.loc[state, 'zoom'],
         mapbox_center=dict(lat=states_meta_df.loc[state, 'lat'],
@@ -135,7 +148,7 @@ def make_counties_map(counties_map_df, counties_geo, states_meta_df, fips=None, 
     return fig
 
 
-def make_cases_graph(fig, df, row=1, col=1, only_total_cases=False):
+def _add_cases_graph(fig, df, row=1, col=1, only_total_cases=False):
     df = df.round(1)
     ### find first tick spot
     total_days = len(df)
@@ -198,61 +211,24 @@ def make_cases_graph(fig, df, row=1, col=1, only_total_cases=False):
     return fig
 
 
-def make_cases_subplots(fd, state, county_fips=None):
-    if county_fips is None:
-        county_title = '(Click on a county to see county graph)'
-    else:
-        county_title = fd.fips_county_dict[county_fips]
-
-    fig = make_subplots(rows=2, shared_xaxes=False, vertical_spacing=0.2)
-
-    state_pop = fd.state_pop_dict[state]
-    states_df = cases_data_for_graph(fd.states_df[state], state_pop)
-    fig = make_cases_graph(fig, states_df, row=1, col=1)
-
-    if county_fips:
-        county_pop = fd.fips_pop_dict[county_fips]
-        counties_df = cases_data_for_graph(fd.counties_df[county_fips], county_pop)
-        if counties_df is None:
-            county_title = 'No recorded positive cases in {}'.format(county_title)
-        else:
-            fig = make_cases_graph(fig, counties_df, row=2, col=1)
-
-    title_annotations = [
-        dict(x=0.5, y=1.08, showarrow=False, xref='paper', yref='paper',
-             yanchor='top', xanchor='center',
-             text='<b>{}</b>'.format(state), font={'size': 18}
-             ),
-        dict(x=0.5, y=0.44, showarrow=False, xref='paper', yref='paper',
-             yanchor='middle', xanchor='center',
-             text='<b>{}</b>'.format(county_title), font={'size': 16}
-             )
-    ]
-
-    fig.update_layout(annotations=title_annotations)
-
-    fig = _add_buttons_and_annotations(fig, states_df)
-    return fig
-
-
-def _add_buttons_and_annotations(fig, states_df, width=425, height=500):
+def _add_buttons_and_annotations(fig, df):
     x_loc = 20
     x_loc50 = 11
-    if states_df['cases_rate_ave'].max() < 45:
+    if df['cases_rate'].max() < 45:
         ay = 25
     else:
         ay = -25
     cases_rate_annotations = tuple([
-        dict(x=states_df.index[x_loc50], y=50,
+        dict(x=df.index[x_loc50], y=50,
              xref='x1', yref='y1', text='50 Cases<br>per 100k', ax=0, ay=ay),
-        dict(x=states_df.index[x_loc], y=states_df['cases_rate_ave'].iloc[x_loc],
-             xref='x1', yref='y1', text='7 Day Average', ax=0, ay=-25,
+        dict(x=df.index[x_loc], y=df['cases_rate_ave'].iloc[x_loc],
+             xref='x1', yref='y1', text='7 Day Average', ax=0, ay=-20,
              ),
     ])
     cases_annotations = tuple([
-        dict(x=states_df.index[x_loc], y=states_df['cases_ave'].iloc[x_loc],
-                             xref="x", yref="y", text='7 Day Average',
-                             ax=0, ay=-25)
+        dict(x=df.index[x_loc], y=df['cases_ave'].iloc[x_loc],
+             xref="x", yref="y", text='7 Day Average',
+             ax=0, ay=-20)
     ])
 
     initial_annotations = fig.layout.annotations
@@ -266,7 +242,7 @@ def _add_buttons_and_annotations(fig, states_df, width=425, height=500):
                 active=0,
                 showactive=True,
                 x=0.5,
-                y=1.17,
+                y=1.2,
                 xanchor='center',
                 yanchor='top',
                 buttons=list([
@@ -282,18 +258,13 @@ def _add_buttons_and_annotations(fig, states_df, width=425, height=500):
             )
         ])
 
-    fig.update_layout(width=width,
-                      height=height,
-                      showlegend=False,
-                      margin=dict(l=5, r=5, b=5, t=5, pad=1),
-                      hovermode='x unified')
     return fig
 
 
 def make_usa_graph(ser):
     fig = make_subplots()
-    df = cases_data_for_graph(ser)
-    fig = make_cases_graph(fig, df, row=1, col=1, only_total_cases=True)
+    df = _add_ave_and_rate_cols(ser)
+    fig = _add_cases_graph(fig, df, only_total_cases=True)
 
     x_loc = 30
     cases_annotations = [
@@ -302,7 +273,7 @@ def make_usa_graph(ser):
              ax=0, ay=-25),
     ]
 
-    fig.update_layout(width=400,
+    fig.update_layout(width=360,
                       height=200,
                       showlegend=False,
                       margin=dict(l=5, r=5, b=5, t=5, pad=1),
@@ -311,10 +282,74 @@ def make_usa_graph(ser):
     return fig
 
 
-if __name__ == '__main__':
-    fd = FreshData()
-    # states_meta = load_states_csv()
+def make_state_or_county_graph(fd, state=None, fips=None):
+    if state and fips:
+        raise ValueError('You must provide either `state` or `fips`, not both')
 
-    fig = make_cases_subplots(fd, 'USA')
-    fig.show()
+    if not state and not fips:
+        raise ValueError('You must provide one of `state` or `fips`')
+
+    if state:
+        ser = fd.states_df[state]
+        pop = fd.state_pop_dict[state]
+    elif fips:
+        ser = fd.counties_df[fips]
+        pop = fd.fips_pop_dict[fips]
+
+    fig = make_subplots()
+    df = _add_ave_and_rate_cols(ser, pop)
+    fig = _add_cases_graph(fig, df, row=1, col=1)
+
+    fig = _add_buttons_and_annotations(fig, df)
+
+    fig.update_layout(width=360,
+                      height=270,
+                      showlegend=False,
+                      margin=dict(l=5, r=5, b=5, t=5, pad=1),
+                      hovermode='x unified')
+    return fig
+
+
+if __name__ == '__main__':
+    print()
+
+
+
+# def make_cases_subplots(fd, state, county_fips=None):
+#     if county_fips is None:
+#         county_title = '(Click on a county to see county graph)'
+#     else:
+#         county_title = fd.fips_county_dict[county_fips]
+#
+#     fig = make_subplots(rows=2, shared_xaxes=False, vertical_spacing=0.2)
+#
+#     state_pop = fd.state_pop_dict[state]
+#     states_df = cases_data_for_graph(fd.states_df[state], state_pop)
+#     fig = make_cases_graph(fig, states_df, row=1, col=1)
+#
+#     if county_fips:
+#         county_pop = fd.fips_pop_dict[county_fips]
+#         counties_df = cases_data_for_graph(fd.counties_df[county_fips], county_pop)
+#         if counties_df is None:
+#             county_title = 'No recorded positive cases in {}'.format(county_title)
+#         else:
+#             fig = make_cases_graph(fig, counties_df, row=2, col=1)
+#
+#     title_annotations = [
+#         dict(x=0.5, y=1.08, showarrow=False, xref='paper', yref='paper',
+#              yanchor='top', xanchor='center',
+#              text='<b>{}</b>'.format(state), font={'size': 18}
+#              ),
+#         dict(x=0.5, y=0.44, showarrow=False, xref='paper', yref='paper',
+#              yanchor='middle', xanchor='center',
+#              text='<b>{}</b>'.format(county_title), font={'size': 16}
+#              )
+#     ]
+#
+#     fig.update_layout(annotations=title_annotations)
+#
+#     fig = _add_buttons_and_annotations(fig, states_df)
+#     return fig
+
+
 

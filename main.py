@@ -21,6 +21,28 @@ config = {'scrollZoom': False,
 
 
 #### LAYOUT ###################################################################
+def table_and_graph_card(title, table, graph):
+    return dbc.Card([
+        html.H4(title, style={'textAlign': 'center'}),
+        dbc.Row([
+            dbc.Table(table,
+                      bordered=True,
+                      dark=False,
+                      striped=True,
+                      className='table-primary',
+                      size='sm',
+                      style=dict(width='8.1cm')),
+        ], justify='center'),
+        dcc.Graph(figure=graph,
+                  config=config),
+    ], color='light', body=True)
+
+
+def usa_table_and_graph_card():
+    return table_and_graph_card('USA',
+                                make_trend_table(fd.states_df['USA']),
+                                make_usa_graph(fd.states_df['USA']))
+
 
 app.layout = dbc.Container([
     dbc.Row([
@@ -36,23 +58,12 @@ app.layout = dbc.Container([
                              interval=1*1000 * 60 * 60,  # in milliseconds
                              n_intervals=0),
                 dbc.Row([
-                    dbc.Card([
-                        html.H4('USA', style={'textAlign': 'center'}),
-                        dbc.Table(make_trend_table(fd.states_df['USA']),
-                                  bordered=True,
-                                  dark=False,
-                                  striped=True,
-                                  id='usa-card',
-                                  className='table-primary'),
-                        dcc.Graph(figure=make_usa_graph(fd.states_df['USA']),
-                                  id='usa-graph',
-                                  config=config),
-                    ], color='light', inverse=False, body=True),
+                    html.Div(usa_table_and_graph_card(), id='usa-card'),
                     dbc.Card([
                         dcc.Graph(figure=make_states_map(fd.states_map_df, fd.states_df.index[-1]),
                                   id='usa-map',
                                   config=config),
-                        html.H6('Click on a state or select from the dropdown to see county-level data',
+                        html.H6('Click on a state or select from the dropdown to see state-view',
                                 style={'textAlign': 'center'}),
                     ], color='light', inverse=False, body=True),
                 ], justify='center'),
@@ -69,28 +80,18 @@ app.layout = dbc.Container([
                                      options=[dict(value=s, label=s) for s in fd.states_meta_df.index],
                                      placeholder='Select a state',
                                      clearable=False,
-                                     style= {"width": "180px",
-                                             # "font-family": "sans-serif",
-                                             "font-size": "large",}),
+                                     style={"width": "180px",
+                                            "font-size": "large",}),
                     ], width=3),
                 ], justify='center'),
                 dbc.Row([
                     dbc.Card([
-                        dbc.CardBody([
-                            dbc.Row([
-                                dbc.Col([
-                                    dcc.Loading([
-                                        dcc.Graph(id='state-map',
-                                                  figure=make_counties_map(fd.counties_map_df, fd.counties_geo, fd.states_meta_df, state='USA'),
-                                                  config={'displayModeBar': False}),
-                                            ], type='default')
-                                    ], width='auto'),
-                                dbc.Col([
-                                        dcc.Loading([html.Div(id='county-graph')], type='default'),
-                                ], width='auto'),
-                            ], justify='center'),
-                        ]),
-                    ], color='light'),
+                        dcc.Loading([
+                            dcc.Graph(id='state-map',
+                                      config={'displayModeBar': False}),
+                                ], type='default')
+                    ], color='light', body=True),
+                    dcc.Loading([html.Div(id='county-graph')], type='default'),
                 ], justify='center'),
             ]),
         ], color='secondary'),
@@ -111,15 +112,11 @@ app.layout = dbc.Container([
 #### CALLBACKS ################################################################
 
 @app.callback(
-    [Output('usa-card', 'children'),
-     Output('usa-graph', 'figure'),
-     Output('usa-map', 'figure')],
+    Output('usa-card', 'children'),
     [Input('interval-component', 'n_intervals')],
     prevent_initial_call=False)
 def update_usa_data(_):
-    return (make_trend_table(fd.states_df['USA']),
-            make_usa_graph(fd.states_df['USA']),
-            make_states_map(fd.states_map_df, fd.states_df.index[-1]))
+    return usa_table_and_graph_card()
 
 
 @app.callback(
@@ -139,7 +136,7 @@ def map_click_or_county_selection(clickData):
 @app.callback(
     Output('state-map', 'figure'),
     [Input('state-dropdown', 'value')],
-    prevent_initial_call=True)
+    prevent_initial_call=False)
 def update_state_map(value):
     if value is None:
         value = 'USA'
@@ -151,25 +148,35 @@ def update_state_map(value):
     [Input('state-dropdown', 'value'),
      Input('state-map', 'clickData')],
     prevent_initial_call=True)
-def make_county_display(value, clickData):
+def make_state_or_county_card(value, clickData):
     ctx = dash.callback_context
     trigger = ctx.triggered[0]['prop_id'].split('.')[0]
     if trigger == 'state-dropdown':
-        fig = make_cases_subplots(fd, value)
-    if trigger == 'state-map':
-        state = clickData['points'][0]['customdata']
-        fips = clickData['points'][0]['location']
-        fig = make_cases_subplots(fd, state, fips)
+        state = value
+        title = state
+        table = make_trend_table(fd.states_df[state])
+        graph = make_state_or_county_graph(fd, state=state)
 
-    return dcc.Graph(figure=fig, config={'displayModeBar': False})
+    if trigger == 'state-map':
+        fips = clickData['points'][0]['location']
+        title = fd.fips_county_dict[fips]
+        if fd.counties_df[fips].sum() == 0:
+            return html.H4('No cases have been reported in {}'.format(title))
+
+        table = make_trend_table(fd.counties_df[fips])
+        graph = make_state_or_county_graph(fd, fips=fips)
+
+    return table_and_graph_card(title, table, graph)
 
 
 if __name__ == '__main__':
     app.run_server(debug=True, port=8080)
+
 """
 TODO:
-- Use separate card for bottom state section
-
+- Add tests
+- Add documentation
+- Update README
 
 # FIXME: Not all of these are actually removed! Might be plotly bug
 modebar_buttons_to_remove = ['autoScale2d',
