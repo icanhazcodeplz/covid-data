@@ -57,7 +57,7 @@ class DataHandler:
         return pd.read_pickle(BytesIO(txt))
 
     def _local_pkl_path(self, name):
-        return '{}/{}.pkl'.format(DATA_DIR, name)
+        return 'data/{}.pkl'.format(name)
 
     def _read_local_pkl(self, name):
         file = self._local_pkl_path(name)
@@ -85,13 +85,13 @@ class DataHandler:
 
     @staticmethod
     def load_states_csv():
-        return pd.read_csv('{}/states.csv'.format(DATA_DIR),
+        return pd.read_csv('data/states.csv',
                            index_col=0,
                            dtype=dict(fips=str))
 
     @staticmethod
     def load_counties_geo():
-        with open('{}/geojson-counties-fips.json'.format(DATA_DIR)) as f:
+        with open('data/geojson-counties-fips.json') as f:
             counties_geo = json.load(f)
         return counties_geo
 
