@@ -29,7 +29,7 @@ def _add_ave_and_rate_cols(cases_s, pop=None):
     return df.dropna()
 
 
-def make_trend_table(ser):
+def trend_table(ser):
     df = _add_ave_and_rate_cols(ser)
     yest = int(df['cases'][-1])
     yest_date_str = df.index[-1].strftime('%b %-d')
@@ -71,7 +71,7 @@ def make_trend_table(ser):
     return table_header + table_body
 
 
-def make_states_map(states_map_df, date):
+def states_map(states_map_df, date):
 
     fig = go.Figure(data=go.Choropleth(
         locationmode='USA-states',
@@ -103,7 +103,7 @@ def make_states_map(states_map_df, date):
     return fig
 
 
-def make_counties_map(counties_map_df, counties_geo, states_meta_df, fips=None, state=None):
+def counties_map(counties_map_df, counties_geo, states_meta_df, fips=None, state=None):
     df = counties_map_df
 
     if not fips and not state:
@@ -148,166 +148,167 @@ def make_counties_map(counties_map_df, counties_geo, states_meta_df, fips=None, 
     return fig
 
 
-def _add_cases_graph(fig, df, row=1, col=1, only_total_cases=False):
-    df = df.round(1)
-    ### find first tick spot
-    total_days = len(df)
-    days_back_to_start = int(total_days / 14) * 14 + 2
-    # Hacky fix to add extra day at end so that the last tick-mark will show
-    new_i = df.index[-1] + timedelta(days=1)
-    df.loc[new_i] = [np.nan] * len(df.columns)
+class CasesGraph:
 
-    # Once every fortnight we have this problem
-    if days_back_to_start > len(df):
-        days_back_to_start -= 14
+    def _add_cases_graph(self, fig, df, row=1, col=1, only_total_cases=False):
+        df = df.round(1)
+        ### find first tick spot
+        total_days = len(df)
+        days_back_to_start = int(total_days / 14) * 14 + 2
+        # Hacky fix to add extra day at end so that the last tick-mark will show
+        new_i = df.index[-1] + timedelta(days=1)
+        df.loc[new_i] = [np.nan] * len(df.columns)
 
-    if not only_total_cases:
+        # Once every fortnight we have this problem
+        if days_back_to_start > len(df):
+            days_back_to_start -= 14
+
+        if not only_total_cases:
+            fig.add_trace(
+                go.Bar(
+                    x=list(df.index), y=list(df['cases_rate']), name='Cases Per 100k',
+                    marker=dict(color='red'), opacity=0.5
+                ),
+                row=row, col=col
+            )
+            fig.add_trace(
+                go.Scatter(
+                    x=list(df.index), y=list(df['cases_rate_ave']),
+                    name='7 Day Average.', line=dict(color='red'),
+                    hoverinfo='skip'
+                ),
+                row=row, col=col,
+            )
+            fig.add_trace(
+                go.Scatter(
+                    x=list(df.index), y=[50]*len(df), line=dict(color='rgba(0, 0, 0, 0.5)', dash='dash'),
+                    hoverinfo='skip'
+                ),
+                row=row, col=col
+            )
+
         fig.add_trace(
             go.Bar(
-                x=list(df.index), y=list(df['cases_rate']), name='Cases Per 100k',
-                marker=dict(color='red'), opacity=0.5
+                x=list(df.index), y=list(df['cases']), name='Cases',
+                marker=dict(color='red'), opacity=0.5,
+                visible=only_total_cases
             ),
             row=row, col=col
         )
         fig.add_trace(
             go.Scatter(
-                x=list(df.index), y=list(df['cases_rate_ave']),
-                name='7 Day Average.', line=dict(color='red'),
-                hoverinfo='skip'
-            ),
-            row=row, col=col,
-        )
-        fig.add_trace(
-            go.Scatter(
-                x=list(df.index), y=[50]*len(df), line=dict(color='rgba(0, 0, 0, 0.5)', dash='dash'),
-                hoverinfo='skip'
+                x=list(df.index), y=list(df['cases_ave']), name='7 Day Average',
+                line=dict(color='red'),
+                visible=only_total_cases, hoverinfo='skip'
             ),
             row=row, col=col
         )
 
-    fig.add_trace(
-        go.Bar(
-            x=list(df.index), y=list(df['cases']), name='Cases',
-            marker=dict(color='red'), opacity=0.5,
-            visible=only_total_cases
-        ),
-        row=row, col=col
-    )
-    fig.add_trace(
-        go.Scatter(
-            x=list(df.index), y=list(df['cases_ave']), name='7 Day Average',
-            line=dict(color='red'),
-            visible=only_total_cases, hoverinfo='skip'
-        ),
-        row=row, col=col
-    )
+        fig.update_xaxes(
+                         tickformat='%b %d', tickmode='linear',
+                         tick0=df.index[-days_back_to_start],
+                         dtick=14 * 86400000.0,showgrid=True, ticks='outside',
+                         tickson='boundaries', ticklen=3, tickangle=45,
+                         row=row, col=col)
+        return fig
 
-    fig.update_xaxes(
-                     tickformat='%b %d', tickmode='linear',
-                     tick0=df.index[-days_back_to_start],
-                     dtick=14 * 86400000.0,showgrid=True, ticks='outside',
-                     tickson='boundaries', ticklen=3, tickangle=45,
-                     row=row, col=col)
-    return fig
-
-
-def _add_buttons_and_annotations(fig, df):
-    x_loc = 20
-    x_loc50 = 11
-    if df['cases_rate'].max() < 45:
-        ay = 25
-    else:
-        ay = -25
-    cases_rate_annotations = tuple([
-        dict(x=df.index[x_loc50], y=50,
-             xref='x1', yref='y1', text='50 Cases<br>per 100k', ax=0, ay=ay),
-        dict(x=df.index[x_loc], y=df['cases_rate_ave'].iloc[x_loc],
-             xref='x1', yref='y1', text='7 Day Average', ax=0, ay=-20,
-             ),
-    ])
-    cases_annotations = tuple([
-        dict(x=df.index[x_loc], y=df['cases_ave'].iloc[x_loc],
-             xref="x", yref="y", text='7 Day Average',
-             ax=0, ay=-20)
-    ])
-
-    initial_annotations = fig.layout.annotations
-    fig.layout.annotations = initial_annotations + cases_rate_annotations
-
-    fig.update_layout(
-        updatemenus=[
-            dict(
-                type="buttons",
-                direction="right",
-                active=0,
-                showactive=True,
-                x=0.5,
-                y=1.2,
-                xanchor='center',
-                yanchor='top',
-                buttons=list([
-                    dict(label='New Cases per 100k',
-                         method="update",
-                         args=[{"visible": [True, True, True, False, False]},
-                               {"annotations": initial_annotations + cases_rate_annotations}]),
-                    dict(label='New Cases',
-                         method="update",
-                         args=[{"visible": [False, False, False, True, True]},
-                               {"annotations": initial_annotations + cases_annotations}]),
-                ]),
-            )
+    def _add_buttons_and_annotations(self, fig, df):
+        x_loc = 20
+        x_loc50 = 11
+        if df['cases_rate'].max() < 45:
+            ay = 25
+        else:
+            ay = -25
+        cases_rate_annotations = tuple([
+            dict(x=df.index[x_loc50], y=50,
+                 xref='x1', yref='y1', text='50 Cases<br>per 100k', ax=0, ay=ay),
+            dict(x=df.index[x_loc], y=df['cases_rate_ave'].iloc[x_loc],
+                 xref='x1', yref='y1', text='7 Day Average', ax=0, ay=-20,
+                 ),
+        ])
+        cases_annotations = tuple([
+            dict(x=df.index[x_loc], y=df['cases_ave'].iloc[x_loc],
+                 xref="x", yref="y", text='7 Day Average',
+                 ax=0, ay=-20)
         ])
 
-    return fig
+        initial_annotations = fig.layout.annotations
+        fig.layout.annotations = initial_annotations + cases_rate_annotations
 
+        fig.update_layout(
+            updatemenus=[
+                dict(
+                    type="buttons",
+                    direction="right",
+                    active=0,
+                    showactive=True,
+                    x=0.5,
+                    y=1.2,
+                    xanchor='center',
+                    yanchor='top',
+                    buttons=list([
+                        dict(label='New Cases per 100k',
+                             method="update",
+                             args=[{"visible": [True, True, True, False, False]},
+                                   {"annotations": initial_annotations + cases_rate_annotations}]),
+                        dict(label='New Cases',
+                             method="update",
+                             args=[{"visible": [False, False, False, True, True]},
+                                   {"annotations": initial_annotations + cases_annotations}]),
+                    ]),
+                )
+            ])
 
-def make_usa_graph(ser):
-    fig = make_subplots()
-    df = _add_ave_and_rate_cols(ser)
-    fig = _add_cases_graph(fig, df, only_total_cases=True)
+        return fig
 
-    x_loc = 30
-    cases_annotations = [
-        dict(x=df.index[x_loc], y=df['cases_ave'].iloc[x_loc],
-             xref="x", yref="y", text='7 Day Average',
-             ax=0, ay=-25),
-    ]
+    @staticmethod
+    def usa_graph(usa_cases_ser):
+        fig = make_subplots()
+        df = _add_ave_and_rate_cols(usa_cases_ser)
+        fig = CasesGraph()._add_cases_graph(fig, df, only_total_cases=True)
 
-    fig.update_layout(width=360,
-                      height=200,
-                      showlegend=False,
-                      margin=dict(l=5, r=5, b=5, t=5, pad=1),
-                      hovermode='x unified',
-                      annotations=cases_annotations)
-    return fig
+        x_loc = 30
+        cases_annotations = [
+            dict(x=df.index[x_loc], y=df['cases_ave'].iloc[x_loc],
+                 xref="x", yref="y", text='7 Day Average',
+                 ax=0, ay=-25),
+        ]
 
+        fig.update_layout(width=360,
+                          height=200,
+                          showlegend=False,
+                          margin=dict(l=5, r=5, b=5, t=5, pad=1),
+                          hovermode='x unified',
+                          annotations=cases_annotations)
+        return fig
 
-def make_state_or_county_graph(fd, state=None, fips=None):
-    if state and fips:
-        raise ValueError('You must provide either `state` or `fips`, not both')
+    @staticmethod
+    def state_or_county_graph(fd, state=None, fips=None):
+        if state and fips:
+            raise ValueError('You must provide either `state` or `fips`, not both')
 
-    if not state and not fips:
-        raise ValueError('You must provide one of `state` or `fips`')
+        if not state and not fips:
+            raise ValueError('You must provide one of `state` or `fips`')
 
-    if state:
-        ser = fd.states_df[state]
-        pop = fd.state_pop_dict[state]
-    elif fips:
-        ser = fd.counties_df[fips]
-        pop = fd.fips_pop_dict[fips]
+        if state:
+            ser = fd.states_df[state]
+            pop = fd.state_pop_dict[state]
+        elif fips:
+            ser = fd.counties_df[fips]
+            pop = fd.fips_pop_dict[fips]
 
-    fig = make_subplots()
-    df = _add_ave_and_rate_cols(ser, pop)
-    fig = _add_cases_graph(fig, df, row=1, col=1)
+        fig = make_subplots()
+        df = _add_ave_and_rate_cols(ser, pop)
+        fig = CasesGraph()._add_cases_graph(fig, df, row=1, col=1)
 
-    fig = _add_buttons_and_annotations(fig, df)
+        fig = CasesGraph()._add_buttons_and_annotations(fig, df)
 
-    fig.update_layout(width=360,
-                      height=270,
-                      showlegend=False,
-                      margin=dict(l=5, r=5, b=5, t=5, pad=1),
-                      hovermode='x unified')
-    return fig
+        fig.update_layout(width=360,
+                          height=270,
+                          showlegend=False,
+                          margin=dict(l=5, r=5, b=5, t=5, pad=1),
+                          hovermode='x unified')
+        return fig
 
 
 if __name__ == '__main__':

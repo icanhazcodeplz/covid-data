@@ -71,14 +71,14 @@ class DataHandler:
 
     @staticmethod
     def load_pkl_file(file_prefix):
-        if USE_LOCAL_DIR:
+        if LOCAL_DATA:
             return DataHandler()._read_local_pkl(file_prefix)
         else:
             return DataHandler()._download_pkl_blob_as_df(file_prefix)
 
     @staticmethod
     def save_pkl_file(obj, file_prefix):
-        if USE_LOCAL_DIR:
+        if LOCAL_DATA:
             return DataHandler()._save_local_pkl(obj, file_prefix)
         else:
             return DataHandler()._upload_df_as_pkl_blob(obj, file_prefix)
@@ -118,7 +118,7 @@ def load_raw_covid_file(file):
     return df
 
 
-def get_and_save_data(_):
+def get_and_save_data(_=None):
     tot_deaths_df = load_raw_covid_file(DEATHS_FILE)
     tot_cases_df = load_raw_covid_file(CASES_FILE)
     uid_pop = tot_deaths_df[['uid', 'pop']].set_index('uid', drop=True)
@@ -251,10 +251,6 @@ class FreshData:
 
 
 if __name__ == '__main__':
-    get_and_save_data('')
-    # fd = FreshData()
-    #
-    # t = fd.counties_map_df
-
+    get_and_save_data()
     print()
 

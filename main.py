@@ -40,8 +40,8 @@ def table_and_graph_card(title, table, graph):
 
 def usa_table_and_graph_card():
     return table_and_graph_card('USA',
-                                make_trend_table(fd.states_df['USA']),
-                                make_usa_graph(fd.states_df['USA']))
+                                trend_table(fd.states_df['USA']),
+                                CasesGraph.usa_graph(fd.states_df['USA']))
 
 
 app.layout = dbc.Container([
@@ -60,10 +60,9 @@ app.layout = dbc.Container([
                 dbc.Row([
                     html.Div(usa_table_and_graph_card(), id='usa-card'),
                     dbc.Card([
-                        dcc.Graph(figure=make_states_map(fd.states_map_df, fd.states_df.index[-1]),
-                                  id='usa-map',
+                        dcc.Graph(id='usa-map',
                                   config=config),
-                        html.H6('Click on a state or select from the dropdown to see state-view',
+                        html.H5('Click on a state or select from the dropdown to see state-view',
                                 style={'textAlign': 'center'}),
                     ], color='light', inverse=False, body=True),
                 ], justify='center'),
@@ -112,11 +111,13 @@ app.layout = dbc.Container([
 #### CALLBACKS ################################################################
 
 @app.callback(
-    Output('usa-card', 'children'),
+    [Output('usa-card', 'children'),
+     Output('usa-map', 'figure')],
     [Input('interval-component', 'n_intervals')],
     prevent_initial_call=False)
 def update_usa_data(_):
-    return usa_table_and_graph_card()
+    return (usa_table_and_graph_card(),
+            states_map(fd.states_map_df, fd.states_df.index[-1]))
 
 
 @app.callback(
@@ -140,7 +141,7 @@ def map_click_or_county_selection(clickData):
 def update_state_map(value):
     if value is None:
         value = 'USA'
-    return make_counties_map(fd.counties_map_df, fd.counties_geo, fd.states_meta_df, state=value)
+    return counties_map(fd.counties_map_df, fd.counties_geo, fd.states_meta_df, state=value)
 
 
 @app.callback(
@@ -152,10 +153,11 @@ def make_state_or_county_card(value, clickData):
     ctx = dash.callback_context
     trigger = ctx.triggered[0]['prop_id'].split('.')[0]
     if trigger == 'state-dropdown':
-        state = value
-        title = state
-        table = make_trend_table(fd.states_df[state])
-        graph = make_state_or_county_graph(fd, state=state)
+        if value == 'USA':
+            return None
+        title = value
+        table = trend_table(fd.states_df[value])
+        graph = CasesGraph.state_or_county_graph(fd, state=value)
 
     if trigger == 'state-map':
         fips = clickData['points'][0]['location']
@@ -163,8 +165,8 @@ def make_state_or_county_card(value, clickData):
         if fd.counties_df[fips].sum() == 0:
             return html.H4('No cases have been reported in {}'.format(title))
 
-        table = make_trend_table(fd.counties_df[fips])
-        graph = make_state_or_county_graph(fd, fips=fips)
+        table = trend_table(fd.counties_df[fips])
+        graph = CasesGraph.state_or_county_graph(fd, fips=fips)
 
     return table_and_graph_card(title, table, graph)
 
@@ -177,6 +179,7 @@ TODO:
 - Add tests
 - Add documentation
 - Update README
+- Update to python 3.8
 
 # FIXME: Not all of these are actually removed! Might be plotly bug
 modebar_buttons_to_remove = ['autoScale2d',
