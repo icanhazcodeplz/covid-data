@@ -17,11 +17,22 @@ server = app.server
 fd = FreshData()
 config = {'scrollZoom': False,
           'displayModeBar': False,
-          'doubleClick': False} # TODO: Bug report, doubleClick = False does nothing
+          'doubleClick': False}
 
 
 #### LAYOUT ###################################################################
 def table_and_graph_card(title, table, graph):
+    """Return a dbc Card object that shows a table and graph.
+
+    Args:
+        title (str): Title of card displayed as H4
+        table (dash_html_components.Th): html table components
+        graph (plotly.graph_objects.Figure): Plotly graph
+
+    Returns:
+        dash_bootstrap_components.Card: Bootstrap card
+
+    """
     return dbc.Card([
         html.H4(title, style={'textAlign': 'center'}),
         dbc.Row([
@@ -38,12 +49,6 @@ def table_and_graph_card(title, table, graph):
     ], color='light', body=True)
 
 
-def usa_table_and_graph_card():
-    return table_and_graph_card('USA',
-                                trend_table(fd.states_df['USA']),
-                                CasesGraph.usa_graph(fd.states_df['USA']))
-
-
 app.layout = dbc.Container([
     dbc.Row([
         dbc.Col([
@@ -55,12 +60,12 @@ app.layout = dbc.Container([
         dbc.Col([
             dbc.Card([
                 dcc.Interval(id='interval-component',
-                             interval=1*1000 * 60 * 60,  # in milliseconds
+                             interval=1*1000 * 60 * 60, # One hour in milliseconds
                              n_intervals=0),
                 dbc.Row([
-                    html.Div(usa_table_and_graph_card(), id='usa-card'),
+                    html.Div(id='usa-card'),
                     dbc.Card([
-                        dcc.Graph(id='usa-map',
+                        dcc.Graph(id='states-map',
                                   config=config),
                         html.H5('Click on a state or select from the dropdown to see state-view',
                                 style={'textAlign': 'center'}),
@@ -71,9 +76,9 @@ app.layout = dbc.Container([
     ], justify='center',),
 
     dbc.Row([
-        dbc.Card([
-            dbc.CardBody([
-                dbc.Row([
+        dbc.Col([
+            dbc.Card([
+                dbc.Row([  # Row just for the state-dropdown
                     dbc.Col([
                         dcc.Dropdown(id='state-dropdown',
                                      options=[dict(value=s, label=s) for s in fd.states_meta_df.index],
@@ -83,17 +88,18 @@ app.layout = dbc.Container([
                                             "font-size": "large",}),
                     ], width=3),
                 ], justify='center'),
-                dbc.Row([
-                    dbc.Card([
-                        dcc.Loading([
-                            dcc.Graph(id='state-map',
-                                      config={'displayModeBar': False}),
-                                ], type='default')
-                    ], color='light', body=True),
-                    dcc.Loading([html.Div(id='county-graph')], type='default'),
+                dbc.Row([  # Row for the counties map and data card
+                    dcc.Loading([
+                        dbc.Card([
+                            dcc.Graph(id='counties-map',
+                                      config={'displayModeBar': False,
+                                              'doubleClick': False}), # TODO: DashBug report, doubleClick = False does nothing
+                        ], color='light', body=True),
+                    ], type='default'),
+                    dcc.Loading([html.Div(id='state-or-county-card')], type='default'),
                 ], justify='center'),
-            ]),
-        ], color='secondary'),
+            ], color='secondary', body=True),
+        ], width='auto'),
     ], id='county-row', justify='center'),
 
     dbc.Row([
@@ -101,8 +107,8 @@ app.layout = dbc.Container([
             Built with [Plotly Dash](https://plotly.com/dash/). Data from 
             [Johns Hopkins University](https://github.com/CSSEGISandData/COVID-19). 
             Source code at [Github](https://github.com/icanhazcodeplz/covid-data). 
-            Inspiration from the
-            [New York Times](https://www.nytimes.com/interactive/2020/us/coronavirus-us-cases.html).
+            Inspiration from 
+            [The New York Times](https://www.nytimes.com/interactive/2020/us/coronavirus-us-cases.html).
             """),
     ], justify='center',)
 ], fluid=True)
@@ -112,61 +118,75 @@ app.layout = dbc.Container([
 
 @app.callback(
     [Output('usa-card', 'children'),
-     Output('usa-map', 'figure')],
+     Output('states-map', 'figure')],
     [Input('interval-component', 'n_intervals')],
     prevent_initial_call=False)
 def update_usa_data(_):
-    return (usa_table_and_graph_card(),
+    # Using the interval-component trigger on initial load ensures that the
+    # data is fresh. This is a bit hacky, but I couldn't find a better solution
+    return (table_and_graph_card('USA',
+                                 trend_table(fd.states_df['USA']),
+                                 CasesGraph.usa_graph(fd.states_df['USA'])),
             states_map(fd.states_map_df, fd.states_df.index[-1]))
 
 
 @app.callback(
     Output('state-dropdown', 'value'),
-    [Input('usa-map', 'clickData')],
+    [Input('states-map', 'clickData')],
     prevent_initial_call=False)
-def map_click_or_county_selection(clickData):
-    ctx = dash.callback_context
-    trigger = ctx.triggered[0]['prop_id'].split('.')[0]
-    if trigger == 'usa-map':
+def set_state_dropdown_from_map_click(clickData):
+    # Update the selected state in the dropdown if the user clicks on a state
+    # on the states-map
+    trigger = dash.callback_context.triggered[0]['prop_id'].split('.')[0]
+    if trigger == 'states-map':
         state = clickData['points'][0]['customdata']
     else:
+        # The full map of the US will be the first shown
         state = 'USA'
     return state
 
 
 @app.callback(
-    Output('state-map', 'figure'),
+    Output('counties-map', 'figure'),
     [Input('state-dropdown', 'value')],
     prevent_initial_call=False)
-def update_state_map(value):
+def update_counties_map_from_dropdown(value):
+    # If a user selects a state, only show the counties for that state
     if value is None:
         value = 'USA'
-    return counties_map(fd.counties_map_df, fd.counties_geo, fd.states_meta_df, state=value)
+    return counties_map(fd.counties_map_df, fd.counties_geo, fd.states_meta_df, value)
 
 
 @app.callback(
-    Output('county-graph', 'children'),
+    Output('state-or-county-card', 'children'),
     [Input('state-dropdown', 'value'),
-     Input('state-map', 'clickData')],
+     Input('counties-map', 'clickData')],
     prevent_initial_call=True)
 def make_state_or_county_card(value, clickData):
-    ctx = dash.callback_context
-    trigger = ctx.triggered[0]['prop_id'].split('.')[0]
+
+    trigger = dash.callback_context.triggered[0]['prop_id'].split('.')[0]
     if trigger == 'state-dropdown':
+        # for that state
         if value == 'USA':
             return None
         title = value
         table = trend_table(fd.states_df[value])
-        graph = CasesGraph.state_or_county_graph(fd, state=value)
+        ser = fd.states_df[value]
+        pop = fd.state_pop_dict[value]
+        graph = CasesGraph.state_or_county_graph(ser, pop)
 
-    if trigger == 'state-map':
+    if trigger == 'counties-map':
+        # If a county is clicked from the counties-map,
+        # the state-or-county-card will display data from that county
         fips = clickData['points'][0]['location']
         title = fd.fips_county_dict[fips]
         if fd.counties_df[fips].sum() == 0:
             return html.H4('No cases have been reported in {}'.format(title))
 
         table = trend_table(fd.counties_df[fips])
-        graph = CasesGraph.state_or_county_graph(fd, fips=fips)
+        ser = fd.counties_df[fips]
+        pop = fd.fips_pop_dict[fips]
+        graph = CasesGraph.state_or_county_graph(ser, pop)
 
     return table_and_graph_card(title, table, graph)
 
@@ -176,9 +196,8 @@ if __name__ == '__main__':
 
 """
 TODO:
-- Add tests
 - Add documentation
-- Update README
+- Add tests
 - Update to python 3.8
 
 # FIXME: Not all of these are actually removed! Might be plotly bug

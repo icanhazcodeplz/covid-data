@@ -16,6 +16,16 @@ COLORBAR = dict(x=1, title=dict(text='Average<br>Daily<br>Cases<br>per 100k',
 
 
 def _add_ave_and_rate_cols(cases_s, pop=None):
+    """Add 7-day average and rate per 100k population.
+
+    Args:
+        cases_s (pandas.Series): Index are dates, values are number of new cases that day
+        pop (int): Population of the area. If `None`, do not add two extra columns for the cases_rate and average cases_rate
+
+    Returns:
+        pandas.DataFrame: Add column for the rolling 7 day average. If `pop` is provided, add two extra columns fro the cases per 100k population, and 7-day average of that
+
+    """
     if cases_s.sum() == 0:
         return None
 
@@ -30,10 +40,18 @@ def _add_ave_and_rate_cols(cases_s, pop=None):
 
 
 def trend_table(ser):
+    """Create an html table with summary statistics
+
+    Args:
+        ser (pandas.Series): Index are dates, values new cases on that day
+
+    Returns:
+        dash_html_components: Table that shows new cases yesterday, 7-day trend, and 14-day trend
+    """
     df = _add_ave_and_rate_cols(ser)
-    yest = int(df['cases'][-1])
+    yest = int(df['cases'][-1])  # Cases yesterday
     yest_date_str = df.index[-1].strftime('%b %-d')
-    ave = df['cases_ave'][-1]
+    ave = df['cases_ave'][-1]  # Average cases as of yesterday
     ave_week_ago = df['cases_ave'][-8]
     ave_two_week_ago = df['cases_ave'][-15]
 
@@ -72,7 +90,16 @@ def trend_table(ser):
 
 
 def states_map(states_map_df, date):
+    """Create a Choropleth plot of the US states
 
+    Args:
+        states_map_df (pandas.DataFrame): Index are names of states, columns must include 'abbr', 'ave_rate', and 'text'
+        date (datetime): Date that states_map_df was created
+
+    Returns:
+        plotly.graph_objects.Figure:
+
+    """
     fig = go.Figure(data=go.Choropleth(
         locationmode='USA-states',
         locations=states_map_df['abbr'],
@@ -103,19 +130,27 @@ def states_map(states_map_df, date):
     return fig
 
 
-def counties_map(counties_map_df, counties_geo, states_meta_df, fips=None, state=None):
-    df = counties_map_df
+def counties_map(counties_map_df, counties_geo, states_meta_df, state):
+    """County-level map that shows the average cases per day rate
 
-    if not fips and not state:
-        state = 'USA'
-    elif fips:
-        state = df[df['fips'] == fips]['state'].values[0]
+    Args:
+        counties_map_df (pandas.DataFrame): from FreshData
+        counties_geo (dict): from FreshData
+        states_meta_df (pandas.DataFrame): from FreshData
+        state (str): US state to show a map of
+
+    Returns:
+        plotly.graph_objects.Figure:
+
+    """
+    df = counties_map_df
 
     geo = deepcopy(counties_geo)
     if state != 'USA':
         df = df[df['state'] == state]
         state_num = states_meta_df.loc[state, 'fips']
-        l = [f for f in counties_geo['features'] if f['properties']['STATE'] == state_num]
+        l = [f for f in counties_geo['features'] if
+             f['properties']['STATE'] == state_num]
         geo['features'] = l
 
     fig = go.Figure(
@@ -135,7 +170,8 @@ def counties_map(counties_map_df, counties_geo, states_meta_df, fips=None, state
     )
 
     fig.update_layout(
-        mapbox_accesstoken=open(".mapbox_token").read(),  # you will need your own token,
+        # you will need your own mapbox token,
+        mapbox_accesstoken=open(".mapbox_token").read(),
         mapbox_style='light',
         width=MAP_WIDTH,
         height=410,
@@ -166,7 +202,8 @@ class CasesGraph:
         if not only_total_cases:
             fig.add_trace(
                 go.Bar(
-                    x=list(df.index), y=list(df['cases_rate']), name='Cases Per 100k',
+                    x=list(df.index), y=list(df['cases_rate']),
+                    name='Cases Per 100k',
                     marker=dict(color='red'), opacity=0.5
                 ),
                 row=row, col=col
@@ -181,7 +218,8 @@ class CasesGraph:
             )
             fig.add_trace(
                 go.Scatter(
-                    x=list(df.index), y=[50]*len(df), line=dict(color='rgba(0, 0, 0, 0.5)', dash='dash'),
+                    x=list(df.index), y=[50] * len(df),
+                    line=dict(color='rgba(0, 0, 0, 0.5)', dash='dash'),
                     hoverinfo='skip'
                 ),
                 row=row, col=col
@@ -197,7 +235,8 @@ class CasesGraph:
         )
         fig.add_trace(
             go.Scatter(
-                x=list(df.index), y=list(df['cases_ave']), name='7 Day Average',
+                x=list(df.index), y=list(df['cases_ave']),
+                name='7 Day Average',
                 line=dict(color='red'),
                 visible=only_total_cases, hoverinfo='skip'
             ),
@@ -205,11 +244,11 @@ class CasesGraph:
         )
 
         fig.update_xaxes(
-                         tickformat='%b %d', tickmode='linear',
-                         tick0=df.index[-days_back_to_start],
-                         dtick=14 * 86400000.0,showgrid=True, ticks='outside',
-                         tickson='boundaries', ticklen=3, tickangle=45,
-                         row=row, col=col)
+            tickformat='%b %d', tickmode='linear',
+            tick0=df.index[-days_back_to_start],
+            dtick=14 * 86400000.0, showgrid=True, ticks='outside',
+            tickson='boundaries', ticklen=3, tickangle=45,
+            row=row, col=col)
         return fig
 
     def _add_buttons_and_annotations(self, fig, df):
@@ -219,21 +258,22 @@ class CasesGraph:
             ay = 25
         else:
             ay = -25
-        cases_rate_annotations = tuple([
+        cases_rate_anns = tuple([
             dict(x=df.index[x_loc50], y=50,
-                 xref='x1', yref='y1', text='50 Cases<br>per 100k', ax=0, ay=ay),
+                 xref='x1', yref='y1', text='50 Cases<br>per 100k', ax=0,
+                 ay=ay),
             dict(x=df.index[x_loc], y=df['cases_rate_ave'].iloc[x_loc],
                  xref='x1', yref='y1', text='7 Day Average', ax=0, ay=-20,
                  ),
         ])
-        cases_annotations = tuple([
+        cases_anns = tuple([
             dict(x=df.index[x_loc], y=df['cases_ave'].iloc[x_loc],
                  xref="x", yref="y", text='7 Day Average',
                  ax=0, ay=-20)
         ])
 
-        initial_annotations = fig.layout.annotations
-        fig.layout.annotations = initial_annotations + cases_rate_annotations
+        existing_anns = fig.layout.annotations
+        fig.layout.annotations = existing_anns + cases_rate_anns
 
         fig.update_layout(
             updatemenus=[
@@ -249,12 +289,16 @@ class CasesGraph:
                     buttons=list([
                         dict(label='New Cases per 100k',
                              method="update",
-                             args=[{"visible": [True, True, True, False, False]},
-                                   {"annotations": initial_annotations + cases_rate_annotations}]),
+                             args=[
+                                 {"visible": [True, True, True, False, False]},
+                                 {
+                                     "annotations": existing_anns + cases_rate_anns}]),
                         dict(label='New Cases',
                              method="update",
-                             args=[{"visible": [False, False, False, True, True]},
-                                   {"annotations": initial_annotations + cases_annotations}]),
+                             args=[{"visible": [False, False, False, True,
+                                                True]},
+                                   {
+                                       "annotations": existing_anns + cases_anns}]),
                     ]),
                 )
             ])
@@ -283,26 +327,11 @@ class CasesGraph:
         return fig
 
     @staticmethod
-    def state_or_county_graph(fd, state=None, fips=None):
-        if state and fips:
-            raise ValueError('You must provide either `state` or `fips`, not both')
-
-        if not state and not fips:
-            raise ValueError('You must provide one of `state` or `fips`')
-
-        if state:
-            ser = fd.states_df[state]
-            pop = fd.state_pop_dict[state]
-        elif fips:
-            ser = fd.counties_df[fips]
-            pop = fd.fips_pop_dict[fips]
-
-        fig = make_subplots()
+    def state_or_county_graph(ser, pop):
         df = _add_ave_and_rate_cols(ser, pop)
+        fig = make_subplots()
         fig = CasesGraph()._add_cases_graph(fig, df, row=1, col=1)
-
         fig = CasesGraph()._add_buttons_and_annotations(fig, df)
-
         fig.update_layout(width=360,
                           height=270,
                           showlegend=False,
@@ -313,8 +342,6 @@ class CasesGraph:
 
 if __name__ == '__main__':
     print()
-
-
 
 # def make_cases_subplots(fd, state, county_fips=None):
 #     if county_fips is None:
@@ -351,6 +378,3 @@ if __name__ == '__main__':
 #
 #     fig = _add_buttons_and_annotations(fig, states_df)
 #     return fig
-
-
-
