@@ -174,7 +174,7 @@ def counties_map(counties_map_df, counties_geo, states_meta_df, state):
         mapbox_accesstoken=open(".mapbox_token").read(),
         mapbox_style='light',
         width=MAP_WIDTH,
-        height=410,
+        height=414,
         margin=dict(l=3, r=3, b=3, t=3, pad=10),
         mapbox_zoom=states_meta_df.loc[state, 'zoom'],
         mapbox_center=dict(lat=states_meta_df.loc[state, 'lat'],
@@ -185,8 +185,26 @@ def counties_map(counties_map_df, counties_geo, states_meta_df, state):
 
 
 class CasesGraph:
+    """Generate plotly graphs to show number of new cases
 
-    def _add_cases_graph(self, fig, df, row=1, col=1, only_total_cases=False):
+    I put this into a class purely for organizational purposes
+    """
+
+    @staticmethod
+    def _add_cases_graph(fig, df, row=1, col=1, only_total_cases=False):
+        """Add cases graph to a plotly figure
+
+        Args:
+            fig (plotly.graph_objects.Figure):
+            df (pandas.DataFrame): index are dates, columns include 'cases', 'cases_ave', and (optionally) 'cases_rate' and 'cases_rate_ave'
+            row (int, optional): Which row to put the graph if using subplots
+            col (int, optional): Which column to put the graph if using subplots
+            only_total_cases (bool, optional): If True, do not add traces for 'cases_rate' and 'cases_rate_ave'
+
+        Returns:
+            plotly.graph_objects.Figure:
+
+        """
         df = df.round(1)
         ### find first tick spot
         total_days = len(df)
@@ -251,27 +269,47 @@ class CasesGraph:
             row=row, col=col)
         return fig
 
-    def _add_buttons_and_annotations(self, fig, df):
-        x_loc = 20
-        x_loc50 = 11
+    @staticmethod
+    def _add_buttons_and_annotations(fig, df):
+        """Add buttons for 'New Cases per 100k' and 'New Cases'
+
+        Args:
+            fig (plotly.graph_objects.Figure):
+            df (pandas.DataFrame): DataFrame used to create graph
+
+        Returns:
+            :plotly.graph_objects.Figure
+
+        """
+
+        ### Create annotations ######
+
+        x_loc50 = 11  # x location for the '50 Cases per 100k' annotation
+        x_loc7d = 20  # X location for the '7 Day Average' annotation
+
         if df['cases_rate'].max() < 45:
+            #  If max cases_rate is low, put annotation below line
             ay = 25
         else:
+            #  If max cases_rate is high, put annotation above the line
             ay = -25
+
         cases_rate_anns = tuple([
             dict(x=df.index[x_loc50], y=50,
                  xref='x1', yref='y1', text='50 Cases<br>per 100k', ax=0,
                  ay=ay),
-            dict(x=df.index[x_loc], y=df['cases_rate_ave'].iloc[x_loc],
+            dict(x=df.index[x_loc7d], y=df['cases_rate_ave'].iloc[x_loc7d],
                  xref='x1', yref='y1', text='7 Day Average', ax=0, ay=-20,
                  ),
         ])
         cases_anns = tuple([
-            dict(x=df.index[x_loc], y=df['cases_ave'].iloc[x_loc],
+            dict(x=df.index[x_loc7d], y=df['cases_ave'].iloc[x_loc7d],
                  xref="x", yref="y", text='7 Day Average',
                  ax=0, ay=-20)
         ])
 
+
+        ### Add buttons and annotations ######
         existing_anns = fig.layout.annotations
         fig.layout.annotations = existing_anns + cases_rate_anns
 
@@ -291,22 +329,28 @@ class CasesGraph:
                              method="update",
                              args=[
                                  {"visible": [True, True, True, False, False]},
-                                 {
-                                     "annotations": existing_anns + cases_rate_anns}]),
+                                 {"annotations": existing_anns + cases_rate_anns}]),
                         dict(label='New Cases',
                              method="update",
                              args=[{"visible": [False, False, False, True,
                                                 True]},
-                                   {
-                                       "annotations": existing_anns + cases_anns}]),
+                                   {"annotations": existing_anns + cases_anns}]),
                     ]),
                 )
             ])
-
         return fig
 
     @staticmethod
     def usa_graph(usa_cases_ser):
+        """Create a graph showing the new cases for all of the US
+
+        Args:
+            usa_cases_ser (pandas.Series): Index are dates. Values are new cases that day
+
+        Returns:
+            plotly.graph_objects.Figure
+
+        """
         fig = make_subplots()
         df = _add_ave_and_rate_cols(usa_cases_ser)
         fig = CasesGraph()._add_cases_graph(fig, df, only_total_cases=True)
@@ -328,10 +372,20 @@ class CasesGraph:
 
     @staticmethod
     def state_or_county_graph(ser, pop):
+        """Create a graph showing the new cases for all of the US
+
+        Args:
+            ser (pandas.Series): Index are dates, values are new cases on that day
+            pop (int): population of the area in question
+
+        Returns:
+            :plotly.graph_objects.Figure
+
+        """
         df = _add_ave_and_rate_cols(ser, pop)
         fig = make_subplots()
-        fig = CasesGraph()._add_cases_graph(fig, df, row=1, col=1)
-        fig = CasesGraph()._add_buttons_and_annotations(fig, df)
+        fig = CasesGraph._add_cases_graph(fig, df, row=1, col=1)
+        fig = CasesGraph._add_buttons_and_annotations(fig, df)
         fig.update_layout(width=360,
                           height=270,
                           showlegend=False,

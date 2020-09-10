@@ -11,8 +11,19 @@ from constants import *
 
 
 class DataHandler:
+    """Load and save data from either google cloud bucket or .../covid-data/data
 
-    def _upload_string_blob(self, string, destination_blob_name):
+    If `LOCAL_DATA` in the file "constants.py" is set to `True`, save and load
+    data to .../covid-data/data
+
+    If `LOCAL_DATA` is set to `False`, save and load data to google cloud
+    storage in the bucket `BUCKET`, which is defined in "constants.py"
+
+    This is in a class purely for orginizational purposes
+    """
+
+    @staticmethod
+    def _upload_string_blob(string, destination_blob_name):
         """Uploads a string to the bucket."""
         storage_client = storage.Client()
         bucket = storage_client.bucket(BUCKET)
@@ -21,7 +32,8 @@ class DataHandler:
         blob.upload_from_string(string)
         print("String uploaded to {}.".format(destination_blob_name))
 
-    def _upload_file_blob(self, file, destination_blob_name):
+    @staticmethod
+    def _upload_file_blob(file, destination_blob_name):
         """Uploads a file blob to the bucket."""
         storage_client = storage.Client()
         bucket = storage_client.bucket(BUCKET)
@@ -30,12 +42,14 @@ class DataHandler:
         blob.upload_from_file(file)
         print("{} uploaded to {}".format(destination_blob_name, BUCKET)) if LOG_LEVEL > 0 else None
 
-    def _upload_df_as_csv_blob(self, df, name_prefix):
+    @staticmethod
+    def _upload_df_as_csv_blob(df, name_prefix):
         csv = StringIO()
         df.to_csv(csv)
-        self._upload_string_blob(csv.getvalue(), '{}.csv'.format(name_prefix))
+        DataHandler._upload_string_blob(csv.getvalue(), '{}.csv'.format(name_prefix))
 
-    def _download_csv_blob_as_df(self, name_prefix):
+    @staticmethod
+    def _download_csv_blob_as_df(name_prefix):
         """Downloads a blob from the bucket."""
         storage_client = storage.Client()
 
@@ -44,10 +58,12 @@ class DataHandler:
         txt = blob.download_as_string()
         return pd.read_csv(BytesIO(txt), index_col=0)
 
-    def _upload_df_as_pkl_blob(self, df, name_prefix):
-        self._upload_file_blob(BytesIO(pickle.dumps(df)), '{}.pkl'.format(name_prefix))
+    @staticmethod
+    def _upload_df_as_pkl_blob(df, name_prefix):
+        DataHandler._upload_file_blob(BytesIO(pickle.dumps(df)), '{}.pkl'.format(name_prefix))
 
-    def _download_pkl_blob_as_df(self, name_prefix):
+    @staticmethod
+    def _download_pkl_blob_as_df(name_prefix):
         """Downloads a blob from the bucket."""
         storage_client = storage.Client()
 
@@ -56,16 +72,19 @@ class DataHandler:
         txt = blob.download_as_string()
         return pd.read_pickle(BytesIO(txt))
 
-    def _local_pkl_path(self, name):
+    @staticmethod
+    def _local_pkl_path(name):
         return 'data/{}.pkl'.format(name)
 
-    def _read_local_pkl(self, name):
-        file = self._local_pkl_path(name)
+    @staticmethod
+    def _read_local_pkl(name):
+        file = DataHandler._local_pkl_path(name)
         print('reading "{}"'.format(file)) if LOG_LEVEL > 0 else None
         return pd.read_pickle(file)
 
-    def _save_local_pkl(self, thing, name):
-        file = self._local_pkl_path(name)
+    @staticmethod
+    def _save_local_pkl(thing, name):
+        file = DataHandler._local_pkl_path(name)
         pd.to_pickle(thing, file)
         print('saved "{}" locally'.format(file)) if LOG_LEVEL > 0 else None
 
@@ -97,6 +116,15 @@ class DataHandler:
 
 
 def load_raw_covid_file(file):
+    """Read the John Hopkins csv files, do some preprocessing, and return a df
+
+    Args:
+        file (str): URL of the file
+
+    Returns:
+        :pandas.DataFrame
+
+    """
     print('Loading "{}"'.format(file)) if LOG_LEVEL > 0 else None
     df = pd.read_csv(file)
     df = df.drop(
@@ -119,6 +147,12 @@ def load_raw_covid_file(file):
 
 
 def get_and_save_data(_=None):
+    """Download data from John Hopkins, do some processing, and save as pickles
+
+    Args:
+        _: Empty variable. Was needed for the Google Cloud Function to work
+
+    """
     tot_deaths_df = load_raw_covid_file(DEATHS_FILE)
     tot_cases_df = load_raw_covid_file(CASES_FILE)
     uid_pop = tot_deaths_df[['uid', 'pop']].set_index('uid', drop=True)
@@ -195,6 +229,18 @@ def get_and_save_data(_=None):
 
 
 class FreshData:
+    """Single class to access all the data needed in this app.
+
+    John Hopkins updates their data once a day. I am using a Google Cloud
+    Function to pull the data and create four files (see the function
+    `get_and_save_data`) that are then saved to a bucket in Google Cloud
+    Storage. This app is hosted using Google App Engine. It is served using
+    Gunicorn. Because Gunicorn keeps global variables in memory, I needed a way
+     to force some variables to update when there is fresh data avaible in
+    Cloud Storage. This class does that by checking the `last_refresh_date`
+    before returning the attributes, and pulls fresh data from the bucket if needed.
+
+    """
 
     def __init__(self):
         self.states_meta_df = DataHandler.load_states_csv()
@@ -231,26 +277,49 @@ class FreshData:
 
     @property
     def counties_map_df(self):
+        """DataFrame used to generate a county level map
+
+        Returns:
+            :pandas.DataFrame
+
+        """
         self._refresh_if_needed()
         return self._counties_map_df
 
     @property
     def counties_df(self):
+        """DataFrame used to create timeseries graphs of cases
+
+        Returns:
+            :pandas.DataFrame
+
+        """
         self._refresh_if_needed()
         return self._counties_df
 
     @property
     def states_df(self):
+        """DataFrame used to create timeseries graphs for states
+
+        Returns:
+            :pandas.DataFrame
+
+        """
         self._refresh_if_needed()
         return self._states_df
 
     @property
     def states_map_df(self):
+        """DataFrame used to create a map of states
+
+        Returns:
+            :pandas.DataFrame
+
+        """
         self._refresh_if_needed()
         return self._states_map_df
 
 
 if __name__ == '__main__':
     get_and_save_data()
-    print()
 
