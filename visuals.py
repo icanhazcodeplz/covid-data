@@ -9,8 +9,9 @@ from copy import deepcopy
 
 from data_handling import *
 
-Z_MAX = 50
+Z_MAX = 100
 MAP_WIDTH = 625
+X_LOC7d = 38  # X location for the '7 Day Average' annotation
 COLORBAR = dict(x=1, title=dict(text='Average<br>Daily<br>Cases<br>per 100k',
                                 font=dict(size=14, color='#A10C0C')))
 
@@ -206,18 +207,13 @@ class CasesGraph:
 
         """
         df = df.round(1)
-        ### find first tick spot
-        total_days = len(df)
-        days_back_to_start = int(total_days / 14) * 14 + 2
+
         # Hacky fix to add extra day at end so that the last tick-mark will show
         new_i = df.index[-1] + timedelta(days=1)
         df.loc[new_i] = [np.nan] * len(df.columns)
 
-        # Once every fortnight we have this problem
-        if days_back_to_start > len(df):
-            days_back_to_start -= 14
-
         if not only_total_cases:
+            # Traces for total cases
             fig.add_trace(
                 go.Bar(
                     x=list(df.index), y=list(df['cases_rate']),
@@ -243,6 +239,7 @@ class CasesGraph:
                 row=row, col=col
             )
 
+        # Traces for cases per 100k
         fig.add_trace(
             go.Bar(
                 x=list(df.index), y=list(df['cases']), name='Cases',
@@ -261,11 +258,21 @@ class CasesGraph:
             row=row, col=col
         )
 
+        # Set xticks
+        first_month = df.index[1].month
+        last_month = df.index[-1].month
+        first_of_months = [datetime(year=2020, month=m, day=1) for m in
+                           range(first_month, last_month + 1)]
+
         fig.update_xaxes(
-            tickformat='%b %d', tickmode='linear',
-            tick0=df.index[-days_back_to_start],
-            dtick=14 * 86400000.0, showgrid=True, ticks='outside',
-            tickson='boundaries', ticklen=3, tickangle=45,
+            tickformat='%b %-d',
+            tickmode='array',
+            tickvals=first_of_months,
+            showgrid=True,
+            ticks='outside',
+            tickson='boundaries',
+            ticklen=3,
+            tickangle=45,
             row=row, col=col)
         return fig
 
@@ -283,9 +290,7 @@ class CasesGraph:
         """
 
         ### Create annotations ######
-
-        x_loc50 = 11  # x location for the '50 Cases per 100k' annotation
-        x_loc7d = 20  # X location for the '7 Day Average' annotation
+        x_loc50 = 24  # x location for the '50 Cases per 100k' annotation
 
         if df['cases_rate'].max() < 45:
             #  If max cases_rate is low, put annotation below line
@@ -298,12 +303,12 @@ class CasesGraph:
             dict(x=df.index[x_loc50], y=50,
                  xref='x1', yref='y1', text='50 Cases<br>per 100k', ax=0,
                  ay=ay),
-            dict(x=df.index[x_loc7d], y=df['cases_rate_ave'].iloc[x_loc7d],
+            dict(x=df.index[X_LOC7d], y=df['cases_rate_ave'].iloc[X_LOC7d],
                  xref='x1', yref='y1', text='7 Day Average', ax=0, ay=-20,
                  ),
         ])
         cases_anns = tuple([
-            dict(x=df.index[x_loc7d], y=df['cases_ave'].iloc[x_loc7d],
+            dict(x=df.index[X_LOC7d], y=df['cases_ave'].iloc[X_LOC7d],
                  xref="x", yref="y", text='7 Day Average',
                  ax=0, ay=-20)
         ])
@@ -355,9 +360,8 @@ class CasesGraph:
         df = _add_ave_and_rate_cols(usa_cases_ser)
         fig = CasesGraph()._add_cases_graph(fig, df, only_total_cases=True)
 
-        x_loc = 30
         cases_annotations = [
-            dict(x=df.index[x_loc], y=df['cases_ave'].iloc[x_loc],
+            dict(x=df.index[X_LOC7d], y=df['cases_ave'].iloc[X_LOC7d],
                  xref="x", yref="y", text='7 Day Average',
                  ax=0, ay=-25),
         ]

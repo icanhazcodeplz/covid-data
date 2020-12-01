@@ -173,8 +173,9 @@ def get_and_save_data(_=None):
         df = df.clip(lower=0) #FIXME: Remove positive tests from previous day instead?
         df.index = pd.to_datetime(df.index)
 
-        # Only show data from March 1st on
-        return df.iloc[38:]
+        # Only keep data from Feb 24 on
+        slice_i = datetime(year=2020, month=2, day=24)
+        return df[slice_i:]
 
     states_map_df = state_cases_df['pop'].to_frame('pop')
     state_cases_df = state_cases_df.drop('pop', axis='columns')
