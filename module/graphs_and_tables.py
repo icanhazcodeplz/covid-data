@@ -1,19 +1,10 @@
-import pandas as pd
 from plotly.subplots import make_subplots
 import plotly.graph_objects as go
-import numpy as np
 from datetime import datetime, timedelta
 import dash_html_components as html
-import dash_core_components as dcc
-from copy import deepcopy
+from module.data_handling import *
 
-from data_handling import *
-
-Z_MAX = 100
-MAP_WIDTH = 625
 X_LOC7d = 38  # X location for the '7 Day Average' annotation
-COLORBAR = dict(x=1, title=dict(text='Average<br>Daily<br>Cases<br>per 100k',
-                                font=dict(size=14, color='#A10C0C')))
 
 
 def _add_ave_and_rate_cols(cases_s, pop=None):
@@ -90,101 +81,6 @@ def trend_table(ser):
     return table_header + table_body
 
 
-def states_map(states_map_df, date):
-    """Create a Choropleth plot of the US states
-
-    Args:
-        states_map_df (pandas.DataFrame): Index are names of states, columns must include 'abbr', 'ave_rate', and 'text'
-        date (datetime): Date that states_map_df was created
-
-    Returns:
-        plotly.graph_objects.Figure:
-
-    """
-    fig = go.Figure(data=go.Choropleth(
-        locationmode='USA-states',
-        locations=states_map_df['abbr'],
-        z=states_map_df['ave_rate'].astype(float),
-        customdata=states_map_df.index.to_list(),
-        text=states_map_df['text'],
-        zmin=0,
-        zmax=Z_MAX,
-        colorscale='Reds',
-        hovertemplate='%{text} <extra></extra>',
-        colorbar=COLORBAR,
-    ))
-
-    fig.update_layout(
-        margin=dict(l=3, r=3, b=3, t=0, pad=0),
-        geo_scope='usa',
-        width=MAP_WIDTH,
-        height=310,
-        annotations=[dict(
-            x=0.0,
-            y=0.0,
-            xref='paper',
-            yref='paper',
-            text='As of {}'.format(date.strftime('%b %-d')),
-            showarrow=False
-        )]
-    )
-    return fig
-
-
-def counties_map(counties_map_df, counties_geo, states_meta_df, state):
-    """County-level map that shows the average cases per day rate
-
-    Args:
-        counties_map_df (pandas.DataFrame): from FreshData
-        counties_geo (dict): from FreshData
-        states_meta_df (pandas.DataFrame): from FreshData
-        state (str): US state to show a map of
-
-    Returns:
-        plotly.graph_objects.Figure:
-
-    """
-    df = counties_map_df
-
-    geo = deepcopy(counties_geo)
-    if state != 'USA':
-        df = df[df['state'] == state]
-        state_num = states_meta_df.loc[state, 'fips']
-        l = [f for f in counties_geo['features'] if
-             f['properties']['STATE'] == state_num]
-        geo['features'] = l
-
-    fig = go.Figure(
-        go.Choroplethmapbox(
-            colorbar=COLORBAR,
-            geojson=geo,
-            locations=df['fips'],
-            z=df['ave_rate'],
-            customdata=df['state'],
-            text=df['text'],
-            zmin=0,
-            zmax=Z_MAX,
-            hovertemplate='%{text} <extra></extra>',
-            colorscale='Reds',
-            meta=state
-        ),
-    )
-
-    fig.update_layout(
-        # you will need your own mapbox token,
-        mapbox_accesstoken=open(".mapbox_token").read(),
-        mapbox_style='light',
-        width=MAP_WIDTH,
-        height=414,
-        margin=dict(l=3, r=3, b=3, t=3, pad=10),
-        mapbox_zoom=states_meta_df.loc[state, 'zoom'],
-        mapbox_center=dict(lat=states_meta_df.loc[state, 'lat'],
-                           lon=states_meta_df.loc[state, 'lon']),
-    )
-
-    return fig
-
-
 class CasesGraph:
     """Generate plotly graphs to show number of new cases
 
@@ -259,15 +155,17 @@ class CasesGraph:
         )
 
         # Set xticks
-        first_month = df.index[1].month
+        # TODO: Improve this logic so it handles 2022 and onward
         last_month = df.index[-1].month
-        first_of_months = [datetime(year=2020, month=m, day=1) for m in
-                           range(first_month, last_month + 1)]
+        first_of_months20 = [datetime(year=2020, month=m, day=1) for m in
+                             range(1, 13)]
+        first_of_months21 = [datetime(year=2021, month=m, day=1) for m in
+                             range(1, last_month + 1)]
 
         fig.update_xaxes(
-            tickformat='%b %-d',
+            tickformat='%b %Y',
             tickmode='array',
-            tickvals=first_of_months,
+            tickvals=first_of_months20 + first_of_months21,
             showgrid=True,
             ticks='outside',
             tickson='boundaries',
@@ -312,7 +210,6 @@ class CasesGraph:
                  xref="x", yref="y", text='7 Day Average',
                  ax=0, ay=-20)
         ])
-
 
         ### Add buttons and annotations ######
         existing_anns = fig.layout.annotations
@@ -400,39 +297,3 @@ class CasesGraph:
 
 if __name__ == '__main__':
     print()
-
-# def make_cases_subplots(fd, state, county_fips=None):
-#     if county_fips is None:
-#         county_title = '(Click on a county to see county graph)'
-#     else:
-#         county_title = fd.fips_county_dict[county_fips]
-#
-#     fig = make_subplots(rows=2, shared_xaxes=False, vertical_spacing=0.2)
-#
-#     state_pop = fd.state_pop_dict[state]
-#     states_df = cases_data_for_graph(fd.states_df[state], state_pop)
-#     fig = make_cases_graph(fig, states_df, row=1, col=1)
-#
-#     if county_fips:
-#         county_pop = fd.fips_pop_dict[county_fips]
-#         counties_df = cases_data_for_graph(fd.counties_df[county_fips], county_pop)
-#         if counties_df is None:
-#             county_title = 'No recorded positive cases in {}'.format(county_title)
-#         else:
-#             fig = make_cases_graph(fig, counties_df, row=2, col=1)
-#
-#     title_annotations = [
-#         dict(x=0.5, y=1.08, showarrow=False, xref='paper', yref='paper',
-#              yanchor='top', xanchor='center',
-#              text='<b>{}</b>'.format(state), font={'size': 18}
-#              ),
-#         dict(x=0.5, y=0.44, showarrow=False, xref='paper', yref='paper',
-#              yanchor='middle', xanchor='center',
-#              text='<b>{}</b>'.format(county_title), font={'size': 16}
-#              )
-#     ]
-#
-#     fig.update_layout(annotations=title_annotations)
-#
-#     fig = _add_buttons_and_annotations(fig, states_df)
-#     return fig
